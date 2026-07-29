@@ -1,0 +1,3 @@
+-- V1__baseline.sql
+-- Module 1 baseline migration. No business tables yet.
+-- Establishes the Flyway convention: V{n}__description.sql, one migration per schema change, never edited after merge.

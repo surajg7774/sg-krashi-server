@@ -1,0 +1,27 @@
+spring:
+  config:
+    import: "optional:file:./application-local.yml"
+  application:
+    name: sg-krashi-server
+  datasource:
+    url: jdbc:mysql://localhost:${DB_PORT:3307}/${DB_NAME:sgkrashi_dev}?createDatabaseIfNotExist=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+app:
+  cors:
+    allowed-origins: http://localhost:5173
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+server:
+  port: 8080
