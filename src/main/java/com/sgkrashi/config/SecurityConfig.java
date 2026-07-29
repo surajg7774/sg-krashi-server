@@ -42,6 +42,16 @@ public class SecurityConfig {
             "/v3/api-docs/**"
     };
 
+    // GET-only, scoped by HTTP method rather than lumped into PUBLIC_ENDPOINTS —
+    // these paths will gain authenticated write endpoints (Module 15's Admin
+    // product management), and a blanket path-based permitAll() here would
+    // silently make those public too the moment they're added.
+    private static final String[] PUBLIC_GET_ENDPOINTS = {
+            "/api/v1/products/**",
+            "/api/v1/product-categories/**",
+            "/uploads/**"
+    };
+
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final ObjectMapper objectMapper;
     private final CorsConfigurationSource corsConfigurationSource;
@@ -74,6 +84,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, PUBLIC_GET_ENDPOINTS).permitAll()
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(exceptions -> exceptions

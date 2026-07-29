@@ -65,3 +65,6 @@ Thumbs.db
 ### Local secrets ###
 application-local.yml
 .env
+
+### Local dev media storage (LocalStorageProvider) ###
+uploads/

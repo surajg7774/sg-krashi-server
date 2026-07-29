@@ -14,6 +14,13 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  servlet:
+    multipart:
+      # Set above MediaServiceImpl's 5MB application-level limit, so an
+      # oversized upload reaches that check (a clean 400) instead of being
+      # rejected by the servlet container first (a raw 500).
+      max-file-size: 10MB
+      max-request-size: 10MB
 
 app:
   cors:

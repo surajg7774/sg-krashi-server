@@ -10,6 +10,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.util.List;
 
@@ -87,6 +88,14 @@ public class GlobalExceptionHandler {
         ApiErrorResponse body = ApiErrorResponse.of(
                 "ACCESS_DENIED", "You do not have permission to perform this action", List.of());
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiErrorResponse> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException ex) {
+        log.warn("Upload exceeded the servlet container's own size limit");
+        ApiErrorResponse body = ApiErrorResponse.of(
+                "VALIDATION_ERROR", "File exceeds the maximum allowed size of 5MB", List.of());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
