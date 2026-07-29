@@ -3,3 +3,8 @@ DB_NAME: sgkrashi_dev
 DB_USERNAME: root
 DB_PASSWORD: changeme
 JWT_SECRET: changeme-generate-a-random-256-bit-minimum-base64-string
+# From your Razorpay Dashboard (Settings > API Keys) in TEST mode.
+RAZORPAY_KEY_ID: rzp_test_xxxxxxxxxxxxxx
+RAZORPAY_KEY_SECRET: changeme
+# From Dashboard > Webhooks, when you register /api/v1/payments/webhook there.
+RAZORPAY_WEBHOOK_SECRET: changeme
