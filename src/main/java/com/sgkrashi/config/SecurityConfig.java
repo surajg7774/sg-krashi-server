@@ -52,6 +52,9 @@ public class SecurityConfig {
             "/api/v1/product-categories/**",
             "/api/v1/crop-listings/**",
             "/api/v1/crop-categories/**",
+            "/api/v1/equipment/**",
+            "/api/v1/bookings/availability",
+            "/api/v1/bookings/availability/**",
             "/uploads/**"
     };
 
