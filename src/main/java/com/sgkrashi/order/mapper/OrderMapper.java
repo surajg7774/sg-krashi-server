@@ -1,5 +1,6 @@
 package com.sgkrashi.order.mapper;
 
+import com.sgkrashi.common.entity.ItemType;
 import com.sgkrashi.order.dto.response.OrderItemResponse;
 import com.sgkrashi.order.dto.response.OrderResponse;
 import com.sgkrashi.order.dto.response.OrderStatusEventResponse;
@@ -15,11 +16,26 @@ import java.util.Map;
 @Component
 public class OrderMapper {
 
-    public OrderItemResponse toItemResponse(OrderItem item, String thumbnailUrl) {
+    /**
+     * Two separate thumbnail maps — see {@code CartMapper.toItemResponse}'s
+     * Javadoc for why a Product and a CropListing's thumbnails can't be merged
+     * into one ID-keyed map.
+     */
+    public OrderItemResponse toItemResponse(
+            OrderItem item,
+            Map<Long, String> productThumbnails,
+            Map<Long, String> cropListingThumbnails
+    ) {
+        Long itemId = item.getReferencedItemId();
+        String thumbnailUrl = item.getItemType() == ItemType.PRODUCT
+                ? productThumbnails.get(itemId)
+                : cropListingThumbnails.get(itemId);
+
         return new OrderItemResponse(
                 item.getId(),
-                item.getProduct().getId(),
-                item.getProductNameSnapshot(),
+                item.getItemType(),
+                itemId,
+                item.getItemNameSnapshot(),
                 thumbnailUrl,
                 item.getUnitPriceSnapshot(),
                 item.getQuantity(),
@@ -35,10 +51,11 @@ public class OrderMapper {
             Order order,
             List<OrderItem> items,
             List<OrderStatusHistory> history,
-            Map<Long, String> thumbnailsByProductId
+            Map<Long, String> productThumbnails,
+            Map<Long, String> cropListingThumbnails
     ) {
         List<OrderItemResponse> itemResponses = items.stream()
-                .map(item -> toItemResponse(item, thumbnailsByProductId.get(item.getProduct().getId())))
+                .map(item -> toItemResponse(item, productThumbnails, cropListingThumbnails))
                 .toList();
 
         List<OrderStatusEventResponse> historyResponses = history.stream()

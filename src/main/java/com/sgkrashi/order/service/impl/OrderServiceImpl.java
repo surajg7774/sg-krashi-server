@@ -6,8 +6,11 @@ import com.sgkrashi.cart.entity.CartItem;
 import com.sgkrashi.cart.repository.CartItemRepository;
 import com.sgkrashi.cart.repository.CartRepository;
 import com.sgkrashi.common.dto.PaginatedResponse;
+import com.sgkrashi.common.entity.ItemType;
 import com.sgkrashi.common.exception.BusinessRuleException;
 import com.sgkrashi.common.exception.ResourceNotFoundException;
+import com.sgkrashi.cropmarketplace.entity.CropListing;
+import com.sgkrashi.cropmarketplace.repository.CropListingRepository;
 import com.sgkrashi.customer.entity.Address;
 import com.sgkrashi.customer.repository.AddressRepository;
 import com.sgkrashi.media.entity.MediaAsset;
@@ -43,6 +46,7 @@ import java.util.stream.Collectors;
 public class OrderServiceImpl implements OrderService {
 
     private static final String PRODUCT_OWNER_TYPE = "PRODUCT";
+    private static final String CROP_LISTING_OWNER_TYPE = "CROP_LISTING";
 
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
@@ -50,6 +54,7 @@ public class OrderServiceImpl implements OrderService {
     private final CartRepository cartRepository;
     private final CartItemRepository cartItemRepository;
     private final ProductRepository productRepository;
+    private final CropListingRepository cropListingRepository;
     private final AddressRepository addressRepository;
     private final MediaAssetRepository mediaAssetRepository;
     private final CurrentUserProvider currentUserProvider;
@@ -62,6 +67,7 @@ public class OrderServiceImpl implements OrderService {
             CartRepository cartRepository,
             CartItemRepository cartItemRepository,
             ProductRepository productRepository,
+            CropListingRepository cropListingRepository,
             AddressRepository addressRepository,
             MediaAssetRepository mediaAssetRepository,
             CurrentUserProvider currentUserProvider,
@@ -73,29 +79,58 @@ public class OrderServiceImpl implements OrderService {
         this.cartRepository = cartRepository;
         this.cartItemRepository = cartItemRepository;
         this.productRepository = productRepository;
+        this.cropListingRepository = cropListingRepository;
         this.addressRepository = addressRepository;
         this.mediaAssetRepository = mediaAssetRepository;
         this.currentUserProvider = currentUserProvider;
         this.orderMapper = orderMapper;
     }
 
+    /** One locked row (product or crop listing) paired with the cart line that references it. */
+    private record LockedLine(CartItem cartItem, Product product, CropListing cropListing) {
+
+        String itemName() {
+            return product != null ? product.getName() : cropListing.getName();
+        }
+
+        BigDecimal unitPrice() {
+            return product != null ? product.getPrice() : cropListing.getUnitPrice();
+        }
+
+        boolean isActive() {
+            return product != null ? product.isActive() : cropListing.isActive();
+        }
+
+        int availableQuantity() {
+            return product != null ? product.getStockQty() : cropListing.getQuantityAvailable();
+        }
+    }
+
     /**
      * The critical transaction of this module. Correctness invariants:
      * <ol>
-     *   <li>Cart lines are locked in ascending product-ID order — a fixed, global
-     *       ordering — so two concurrent checkouts that share a product can never
-     *       deadlock waiting on each other's locks.</li>
-     *   <li>Every line is validated (product still active, still enough stock)
+     *   <li>Cart lines are locked in a fixed, global order — {@code (itemType, itemId)}
+     *       ascending — across BOTH Products and CropListings, so two concurrent
+     *       checkouts that share any row (of either type) can never deadlock
+     *       waiting on each other's locks.</li>
+     *   <li>Every line is validated (still active, still enough stock/quantity)
      *       BEFORE any row is mutated, so a failure partway through never leaves
      *       a half-decremented order.</li>
-     *   <li>Price and product name are copied onto the order item at this instant
-     *       and never recomputed from the live product afterward.</li>
-     *   <li>Stock is decremented under the same lock that validated it, so the
-     *       check-then-act is atomic with respect to any other transaction — MySQL's
-     *       SELECT ... FOR UPDATE always reads the latest committed row, so a second
-     *       transaction blocked on the lock re-validates against the first
-     *       transaction's already-applied decrement once it proceeds.</li>
+     *   <li>Price and name are copied onto the order item at this instant and
+     *       never recomputed from the live product/listing afterward.</li>
+     *   <li>Stock/quantity is decremented under the same lock that validated it,
+     *       so the check-then-act is atomic with respect to any other
+     *       transaction — MySQL's SELECT ... FOR UPDATE always reads the latest
+     *       committed row, so a second transaction blocked on the lock
+     *       re-validates against the first transaction's already-applied
+     *       decrement once it proceeds.</li>
      * </ol>
+     * Module 6 found (and fixed) a bug where eagerly-loaded Product entities
+     * attached to the persistence context BEFORE the locked fetch caused the
+     * locked query to return stale data despite the DB lock being real. The
+     * same risk applies here for CropListing, which is why cart items are
+     * fetched via {@code findAllByCartId} (no eager association) exactly as
+     * Module 6 established.
      */
     @Override
     @Transactional
@@ -105,34 +140,37 @@ public class OrderServiceImpl implements OrderService {
 
         Cart cart = cartRepository.findByUserId(userId)
                 .orElseThrow(() -> new BusinessRuleException("Cart is empty"));
-        // findAllByCartId (not findByCartId): the latter eagerly loads Product via
-        // @EntityGraph, which would attach a pre-lock (potentially stale) Product
-        // instance to this persistence context before the locked fetch below runs.
         List<CartItem> cartItems = cartItemRepository.findAllByCartId(cart.getId());
         if (cartItems.isEmpty()) {
             throw new BusinessRuleException("Cart is empty");
         }
 
         List<CartItem> sortedItems = cartItems.stream()
-                .sorted(Comparator.comparing(item -> item.getProduct().getId()))
+                .sorted(Comparator
+                        .comparing((CartItem item) -> item.getItemType().name())
+                        .thenComparing(CartItem::getReferencedItemId))
                 .toList();
 
-        List<Product> lockedProducts = new ArrayList<>();
+        List<LockedLine> lockedLines = new ArrayList<>();
         for (CartItem item : sortedItems) {
-            Product locked = productRepository.findByIdForUpdate(item.getProduct().getId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
-            lockedProducts.add(locked);
+            if (item.getItemType() == ItemType.PRODUCT) {
+                Product locked = productRepository.findByIdForUpdate(item.getProduct().getId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
+                lockedLines.add(new LockedLine(item, locked, null));
+            } else {
+                CropListing locked = cropListingRepository.findByIdForUpdate(item.getCropListing().getId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Crop listing not found"));
+                lockedLines.add(new LockedLine(item, null, locked));
+            }
         }
 
-        for (int i = 0; i < sortedItems.size(); i++) {
-            CartItem item = sortedItems.get(i);
-            Product product = lockedProducts.get(i);
-            if (!product.isActive()) {
-                throw new BusinessRuleException("\"" + product.getName() + "\" is no longer available");
+        for (LockedLine line : lockedLines) {
+            if (!line.isActive()) {
+                throw new BusinessRuleException("\"" + line.itemName() + "\" is no longer available");
             }
-            if (product.getStockQty() < item.getQuantity()) {
+            if (line.availableQuantity() < line.cartItem().getQuantity()) {
                 throw new BusinessRuleException(
-                        "Only " + product.getStockQty() + " unit(s) of \"" + product.getName() + "\" available");
+                        "Only " + line.availableQuantity() + " unit(s) of \"" + line.itemName() + "\" available");
             }
         }
 
@@ -148,23 +186,28 @@ public class OrderServiceImpl implements OrderService {
 
         List<OrderItem> orderItems = new ArrayList<>();
         BigDecimal total = BigDecimal.ZERO;
-        for (int i = 0; i < sortedItems.size(); i++) {
-            CartItem cartItem = sortedItems.get(i);
-            Product product = lockedProducts.get(i);
-
-            BigDecimal lineTotal = product.getPrice().multiply(BigDecimal.valueOf(cartItem.getQuantity()));
+        for (LockedLine line : lockedLines) {
+            int quantity = line.cartItem().getQuantity();
+            BigDecimal lineTotal = line.unitPrice().multiply(BigDecimal.valueOf(quantity));
             total = total.add(lineTotal);
 
             OrderItem orderItem = new OrderItem();
-            orderItem.setProduct(product);
-            orderItem.setProductNameSnapshot(product.getName());
-            orderItem.setUnitPriceSnapshot(product.getPrice());
-            orderItem.setQuantity(cartItem.getQuantity());
+            if (line.product() != null) {
+                orderItem.setItemType(ItemType.PRODUCT);
+                orderItem.setProduct(line.product());
+                line.product().setStockQty(line.product().getStockQty() - quantity);
+                productRepository.save(line.product());
+            } else {
+                orderItem.setItemType(ItemType.CROP_LISTING);
+                orderItem.setCropListing(line.cropListing());
+                line.cropListing().setQuantityAvailable(line.cropListing().getQuantityAvailable() - quantity);
+                cropListingRepository.save(line.cropListing());
+            }
+            orderItem.setItemNameSnapshot(line.itemName());
+            orderItem.setUnitPriceSnapshot(line.unitPrice());
+            orderItem.setQuantity(quantity);
             orderItem.setLineTotal(lineTotal);
             orderItems.add(orderItem);
-
-            product.setStockQty(product.getStockQty() - cartItem.getQuantity());
-            productRepository.save(product);
         }
         order.setTotalAmount(total);
 
@@ -207,8 +250,8 @@ public class OrderServiceImpl implements OrderService {
 
     /**
      * Beyond the module's literal checklist, but necessary for correctness:
-     * checkout decrements stock at order-creation time, before payment settles,
-     * so a failed payment must give that stock back or it leaks permanently.
+     * checkout decrements stock/quantity at order-creation time, before payment
+     * settles, so a failed payment must give it back or it leaks permanently.
      * Distinct from cancellation/refunds, which remain out of scope.
      */
     @Override
@@ -219,17 +262,23 @@ public class OrderServiceImpl implements OrderService {
             return;
         }
 
-        // findAllByOrderId (not findByOrderId): avoid eagerly attaching Product before
-        // the locked fetch below, for the same reason as checkout() — see
-        // CartItemRepository.findAllByCartId's Javadoc.
         List<OrderItem> items = orderItemRepository.findAllByOrderId(order.getId());
         items.stream()
-                .sorted(Comparator.comparing(item -> item.getProduct().getId()))
+                .sorted(Comparator
+                        .comparing((OrderItem item) -> item.getItemType().name())
+                        .thenComparing(OrderItem::getReferencedItemId))
                 .forEach(item -> {
-                    Product product = productRepository.findByIdForUpdate(item.getProduct().getId())
-                            .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
-                    product.setStockQty(product.getStockQty() + item.getQuantity());
-                    productRepository.save(product);
+                    if (item.getItemType() == ItemType.PRODUCT) {
+                        Product product = productRepository.findByIdForUpdate(item.getProduct().getId())
+                                .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
+                        product.setStockQty(product.getStockQty() + item.getQuantity());
+                        productRepository.save(product);
+                    } else {
+                        CropListing cropListing = cropListingRepository.findByIdForUpdate(item.getCropListing().getId())
+                                .orElseThrow(() -> new ResourceNotFoundException("Crop listing not found"));
+                        cropListing.setQuantityAvailable(cropListing.getQuantityAvailable() + item.getQuantity());
+                        cropListingRepository.save(cropListing);
+                    }
                 });
 
         order.setStatus(OrderStatus.PAYMENT_FAILED);
@@ -280,11 +329,22 @@ public class OrderServiceImpl implements OrderService {
         List<OrderItem> items = orderItemRepository.findByOrderId(order.getId());
         List<OrderStatusHistory> history = orderStatusHistoryRepository.findByOrderIdOrderByCreatedAtAsc(order.getId());
 
-        List<Long> productIds = items.stream().map(item -> item.getProduct().getId()).toList();
-        Map<Long, String> thumbnailsByProductId = mediaAssetRepository
+        List<Long> productIds = items.stream()
+                .filter(item -> item.getItemType() == ItemType.PRODUCT)
+                .map(item -> item.getProduct().getId())
+                .toList();
+        List<Long> cropListingIds = items.stream()
+                .filter(item -> item.getItemType() == ItemType.CROP_LISTING)
+                .map(item -> item.getCropListing().getId())
+                .toList();
+
+        Map<Long, String> productThumbnails = mediaAssetRepository
                 .findByOwnerTypeAndOwnerIdInOrderBySortOrderAsc(PRODUCT_OWNER_TYPE, productIds).stream()
                 .collect(Collectors.toMap(MediaAsset::getOwnerId, MediaAsset::getUrl, (first, second) -> first));
+        Map<Long, String> cropListingThumbnails = mediaAssetRepository
+                .findByOwnerTypeAndOwnerIdInOrderBySortOrderAsc(CROP_LISTING_OWNER_TYPE, cropListingIds).stream()
+                .collect(Collectors.toMap(MediaAsset::getOwnerId, MediaAsset::getUrl, (first, second) -> first));
 
-        return orderMapper.toOrderResponse(order, items, history, thumbnailsByProductId);
+        return orderMapper.toOrderResponse(order, items, history, productThumbnails, cropListingThumbnails);
     }
 }
