@@ -8,5 +8,6 @@ package com.sgkrashi.inquiry.entity;
  */
 public enum InquiryModuleType {
     GENERAL,
-    ORGANIC_FARMING
+    ORGANIC_FARMING,
+    DAIRY_FARM
 }
