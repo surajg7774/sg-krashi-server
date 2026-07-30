@@ -23,6 +23,10 @@ import com.sgkrashi.farmstay.entity.StayListing;
 import com.sgkrashi.farmstay.repository.StayListingRepository;
 import com.sgkrashi.media.entity.MediaAsset;
 import com.sgkrashi.media.repository.MediaAssetRepository;
+import com.sgkrashi.notification.event.BookingCancelledEvent;
+import com.sgkrashi.notification.event.BookingConfirmedEvent;
+import com.sgkrashi.notification.event.PaymentFailedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -119,6 +123,7 @@ public class BookingServiceImpl implements BookingService {
     private final MediaAssetRepository mediaAssetRepository;
     private final CurrentUserProvider currentUserProvider;
     private final BookingMapper bookingMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     public BookingServiceImpl(
             BookingRepository bookingRepository,
@@ -127,7 +132,8 @@ public class BookingServiceImpl implements BookingService {
             StayListingRepository stayListingRepository,
             MediaAssetRepository mediaAssetRepository,
             CurrentUserProvider currentUserProvider,
-            BookingMapper bookingMapper
+            BookingMapper bookingMapper,
+            ApplicationEventPublisher eventPublisher
     ) {
         this.bookingRepository = bookingRepository;
         this.bookingLockRepository = bookingLockRepository;
@@ -136,6 +142,7 @@ public class BookingServiceImpl implements BookingService {
         this.mediaAssetRepository = mediaAssetRepository;
         this.currentUserProvider = currentUserProvider;
         this.bookingMapper = bookingMapper;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -246,6 +253,7 @@ public class BookingServiceImpl implements BookingService {
         booking.setCancelledAt(Instant.now());
         booking.setCancellationReason(request.reason());
         Booking saved = bookingRepository.save(booking);
+        eventPublisher.publishEvent(new BookingCancelledEvent(saved.getId(), saved.getUserId(), saved.getCancellationReason()));
 
         BookableItem item = resolveBookableItem(saved.getBookableType(), saved.getBookableId());
         return bookingMapper.toResponse(saved, item.name(), item.thumbnailUrl(), false);
@@ -266,6 +274,7 @@ public class BookingServiceImpl implements BookingService {
         }
         booking.setStatus(BookingStatus.CONFIRMED);
         bookingRepository.save(booking);
+        eventPublisher.publishEvent(new BookingConfirmedEvent(booking.getId(), booking.getUserId()));
     }
 
     @Override
@@ -279,6 +288,7 @@ public class BookingServiceImpl implements BookingService {
         booking.setCancelledAt(Instant.now());
         booking.setCancellationReason("Payment failed");
         bookingRepository.save(booking);
+        eventPublisher.publishEvent(new PaymentFailedEvent("BOOKING", booking.getId(), booking.getUserId()));
     }
 
     private boolean isCancellable(Booking booking) {

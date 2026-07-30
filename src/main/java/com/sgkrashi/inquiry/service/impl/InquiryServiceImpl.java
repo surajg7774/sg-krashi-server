@@ -10,9 +10,12 @@ import com.sgkrashi.inquiry.entity.Inquiry;
 import com.sgkrashi.inquiry.entity.InquiryStatus;
 import com.sgkrashi.inquiry.repository.InquiryRepository;
 import com.sgkrashi.inquiry.service.InquiryService;
+import com.sgkrashi.notification.event.InquiryStatusChangedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -21,10 +24,16 @@ public class InquiryServiceImpl implements InquiryService {
 
     private final InquiryRepository inquiryRepository;
     private final CurrentUserProvider currentUserProvider;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public InquiryServiceImpl(InquiryRepository inquiryRepository, CurrentUserProvider currentUserProvider) {
+    public InquiryServiceImpl(
+            InquiryRepository inquiryRepository,
+            CurrentUserProvider currentUserProvider,
+            ApplicationEventPublisher eventPublisher
+    ) {
         this.inquiryRepository = inquiryRepository;
         this.currentUserProvider = currentUserProvider;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -53,6 +62,7 @@ public class InquiryServiceImpl implements InquiryService {
     }
 
     @Override
+    @Transactional
     public InquiryResponse updateStatus(Long inquiryId, InquiryStatus newStatus) {
         Inquiry inquiry = inquiryRepository.findById(inquiryId)
                 .orElseThrow(() -> new ResourceNotFoundException("Inquiry not found"));
@@ -64,6 +74,7 @@ public class InquiryServiceImpl implements InquiryService {
 
         inquiry.setStatus(newStatus);
         Inquiry saved = inquiryRepository.save(inquiry);
+        eventPublisher.publishEvent(new InquiryStatusChangedEvent(saved.getId(), saved.getUserId(), saved.getStatus()));
         return toResponse(saved);
     }
 

@@ -21,6 +21,21 @@ spring:
       # rejected by the servlet container first (a raw 500).
       max-file-size: 10MB
       max-request-size: 10MB
+  mail:
+    # Local dev: Mailpit (`docker run -d -p 1025:1025 -p 8025:8025
+    # axllent/mailpit`), a real SMTP server that catches mail instead of
+    # delivering it — web UI at http://localhost:8025. No auth/TLS needed.
+    # A real deployment would override host/port/username/password (via
+    # application-local.yml, same pattern as DB_PASSWORD/JWT_SECRET) to
+    # point at an actual provider.
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    properties:
+      mail:
+        smtp:
+          auth: false
+          starttls:
+            enable: false
 
 app:
   cors:
@@ -31,6 +46,8 @@ app:
     key-id: ${RAZORPAY_KEY_ID}
     key-secret: ${RAZORPAY_KEY_SECRET}
     webhook-secret: ${RAZORPAY_WEBHOOK_SECRET}
+  mail:
+    from-address: ${MAIL_FROM:no-reply@sgkrashi.com}
 
 springdoc:
   swagger-ui:

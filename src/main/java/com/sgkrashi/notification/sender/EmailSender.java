@@ -1,0 +1,38 @@
+package com.sgkrashi.notification.sender;
+
+import com.sgkrashi.auth.entity.User;
+import com.sgkrashi.notification.entity.Notification;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.stereotype.Component;
+
+/**
+ * Local dev sends through Mailpit (a real SMTP server that catches mail
+ * instead of delivering it — see {@code application.yml}'s {@code
+ * spring.mail} config and its web UI at http://localhost:8025). This is a
+ * genuine SMTP send, not a log statement — it can be verified independently
+ * of this application via Mailpit's own API/UI, which is what proves the
+ * email path actually works rather than just not crashing.
+ */
+@Component
+public class EmailSender implements NotificationSender {
+
+    private final JavaMailSender mailSender;
+    private final String fromAddress;
+
+    public EmailSender(JavaMailSender mailSender, @Value("${app.mail.from-address}") String fromAddress) {
+        this.mailSender = mailSender;
+        this.fromAddress = fromAddress;
+    }
+
+    @Override
+    public void send(Notification notification, User user) {
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(fromAddress);
+        message.setTo(user.getEmail());
+        message.setSubject(notification.getTitle());
+        message.setText(notification.getMessage());
+        mailSender.send(message);
+    }
+}

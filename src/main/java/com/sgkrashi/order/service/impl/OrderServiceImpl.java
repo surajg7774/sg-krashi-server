@@ -15,6 +15,8 @@ import com.sgkrashi.customer.entity.Address;
 import com.sgkrashi.customer.repository.AddressRepository;
 import com.sgkrashi.media.entity.MediaAsset;
 import com.sgkrashi.media.repository.MediaAssetRepository;
+import com.sgkrashi.notification.event.OrderConfirmedEvent;
+import com.sgkrashi.notification.event.PaymentFailedEvent;
 import com.sgkrashi.order.dto.request.CheckoutRequest;
 import com.sgkrashi.order.dto.response.OrderResponse;
 import com.sgkrashi.order.dto.response.OrderSummaryResponse;
@@ -29,6 +31,7 @@ import com.sgkrashi.order.repository.OrderStatusHistoryRepository;
 import com.sgkrashi.order.service.OrderService;
 import com.sgkrashi.productstore.entity.Product;
 import com.sgkrashi.productstore.repository.ProductRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -59,6 +62,7 @@ public class OrderServiceImpl implements OrderService {
     private final MediaAssetRepository mediaAssetRepository;
     private final CurrentUserProvider currentUserProvider;
     private final OrderMapper orderMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     public OrderServiceImpl(
             OrderRepository orderRepository,
@@ -71,7 +75,8 @@ public class OrderServiceImpl implements OrderService {
             AddressRepository addressRepository,
             MediaAssetRepository mediaAssetRepository,
             CurrentUserProvider currentUserProvider,
-            OrderMapper orderMapper
+            OrderMapper orderMapper,
+            ApplicationEventPublisher eventPublisher
     ) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
@@ -84,6 +89,7 @@ public class OrderServiceImpl implements OrderService {
         this.mediaAssetRepository = mediaAssetRepository;
         this.currentUserProvider = currentUserProvider;
         this.orderMapper = orderMapper;
+        this.eventPublisher = eventPublisher;
     }
 
     /** One locked row (product or crop listing) paired with the cart line that references it. */
@@ -246,6 +252,7 @@ public class OrderServiceImpl implements OrderService {
         order.setStatus(OrderStatus.CONFIRMED);
         orderRepository.save(order);
         recordStatusHistory(order, OrderStatus.CONFIRMED, "Payment confirmed");
+        eventPublisher.publishEvent(new OrderConfirmedEvent(order.getId(), order.getUserId()));
     }
 
     /**
@@ -284,6 +291,7 @@ public class OrderServiceImpl implements OrderService {
         order.setStatus(OrderStatus.PAYMENT_FAILED);
         orderRepository.save(order);
         recordStatusHistory(order, OrderStatus.PAYMENT_FAILED, "Payment failed — stock restored");
+        eventPublisher.publishEvent(new PaymentFailedEvent("ORDER", order.getId(), order.getUserId()));
     }
 
     @Override
