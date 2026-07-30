@@ -129,4 +129,24 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
             @Param("bookableId") Long bookableId,
             @Param("today") LocalDate today
     );
+
+    long countByUserId(Long userId);
+
+    long countByStatus(BookingStatus status);
+
+    long countByStatusAndStartDateGreaterThanEqual(BookingStatus status, LocalDate startDate);
+
+    /**
+     * Admin dashboard KPI — reuses the exact "CONFIRMED + endDate already
+     * passed" proxy from {@link #findEligibleForReview} (Module 12), since
+     * {@code BookingStatus.COMPLETED} is still never set by any code path.
+     * Same gap, same workaround, applied consistently rather than invented
+     * fresh here.
+     */
+    @Query("""
+            select count(b) from Booking b
+            where b.status = com.sgkrashi.booking.entity.BookingStatus.CONFIRMED
+              and b.endDate < :today
+            """)
+    long countCompletedByProxy(@Param("today") LocalDate today);
 }

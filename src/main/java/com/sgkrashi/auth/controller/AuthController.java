@@ -17,16 +17,13 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.CookieValue;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Duration;
-import java.util.Map;
 
 /**
  * Registration, login, refresh-token rotation, logout, and password-reset stubs.
@@ -104,18 +101,6 @@ public class AuthController {
     public ResponseEntity<ApiResponse<Void>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
         authService.resetPassword(request);
         return ResponseEntity.ok(ApiResponse.success(null, "Password has been reset successfully"));
-    }
-
-    /**
-     * Temporary endpoint proving {@code @PreAuthorize} role gating works end-to-end
-     * (Module 2 acceptance criterion 6). No real Admin endpoint exists yet — this
-     * should be deleted once Module 14 ships an actual admin-only route.
-     * TODO(Module 14): remove once a real admin-only endpoint exists.
-     */
-    @GetMapping("/admin-check")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<Map<String, String>>> adminCheck() {
-        return ResponseEntity.ok(ApiResponse.success(Map.of("status", "ADMIN_OK"), "Admin role verified"));
     }
 
     private void enforceRateLimit(HttpServletRequest request) {

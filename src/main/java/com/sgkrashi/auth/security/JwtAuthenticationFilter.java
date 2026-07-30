@@ -1,5 +1,6 @@
 package com.sgkrashi.auth.security;
 
+import com.sgkrashi.auth.repository.UserRepository;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
@@ -17,11 +18,25 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 
 /**
- * Reads the {@code Authorization: Bearer <token>} header on every request, and,
- * if the access token is valid, populates the {@link SecurityContextHolder} directly
- * from the token's claims — no database lookup on the hot path. An invalid or
- * absent token simply leaves the context unauthenticated; downstream authorization
- * rules decide whether that's acceptable for the requested endpoint.
+ * Reads the {@code Authorization: Bearer <token>} header on every request. An
+ * invalid or absent token simply leaves the context unauthenticated;
+ * downstream authorization rules decide whether that's acceptable for the
+ * requested endpoint.
+ *
+ * <p><b>Module 14 addition:</b> this used to populate the security context
+ * directly from the token's claims with no database lookup at all ("no
+ * database lookup on the hot path"). That meant a user deactivated by an
+ * Admin kept working with any access token issued before deactivation, for
+ * up to that token's full 15-minute lifetime — Module 14's first real
+ * exercise of deactivation (Section 4.1's login-blocking requirement) caught
+ * this directly: deactivating a test user did not, in fact, invalidate their
+ * already-issued token. A stateless JWT can't support instant revocation
+ * without giving something up; the deliberate tradeoff made here is one
+ * {@code UserRepository} lookup per authenticated request in exchange for
+ * deactivation actually taking effect immediately, not up to 15 minutes
+ * later. If this lookup ever shows up as a hot-path cost at real scale, a
+ * short-TTL cache keyed by user id would remove most of it without giving
+ * back the immediacy guarantee.
  */
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -30,9 +45,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtTokenProvider jwtTokenProvider;
+    private final UserRepository userRepository;
 
-    public JwtAuthenticationFilter(JwtTokenProvider jwtTokenProvider) {
+    public JwtAuthenticationFilter(JwtTokenProvider jwtTokenProvider, UserRepository userRepository) {
         this.jwtTokenProvider = jwtTokenProvider;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -47,13 +64,22 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String token = header.substring(BEARER_PREFIX.length());
             try {
                 Claims claims = jwtTokenProvider.parseClaims(token);
-                var authorities = jwtTokenProvider.getRoles(claims).stream()
-                        .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
-                        .toList();
+                String email = claims.get("email", String.class);
 
-                Authentication authentication = new UsernamePasswordAuthenticationToken(
-                        claims.get("email", String.class), null, authorities);
-                SecurityContextHolder.getContext().setAuthentication(authentication);
+                boolean stillActive = userRepository.findByEmail(email)
+                        .map(user -> user.isActive())
+                        .orElse(false);
+
+                if (stillActive) {
+                    var authorities = jwtTokenProvider.getRoles(claims).stream()
+                            .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
+                            .toList();
+
+                    Authentication authentication = new UsernamePasswordAuthenticationToken(email, null, authorities);
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                } else {
+                    SecurityContextHolder.clearContext();
+                }
             } catch (JwtException | IllegalArgumentException ex) {
                 SecurityContextHolder.clearContext();
             }

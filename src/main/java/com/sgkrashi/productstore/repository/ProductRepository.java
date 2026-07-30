@@ -44,4 +44,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from Product p where p.id = :id")
     Optional<Product> findByIdForUpdate(@Param("id") Long id);
+
+    /** Admin dashboard KPI — simple threshold query against the existing table, no materialized view (Year 1 scale per the architecture doc). */
+    long countByStockQtyLessThanAndIsActiveTrue(int threshold);
 }
