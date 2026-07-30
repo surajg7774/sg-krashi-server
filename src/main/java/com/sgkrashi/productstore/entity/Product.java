@@ -36,6 +36,13 @@ public class Product extends BaseEntity {
     @Column(name = "is_organic_certified", nullable = false)
     private boolean organicCertified;
 
+    /** Denormalized from {@code reviews} (Module 12) — recomputed on every new review rather than aggregated on read, to avoid an N+1 query per catalog card. */
+    @Column(name = "avg_rating", precision = 3, scale = 2)
+    private BigDecimal avgRating;
+
+    @Column(name = "review_count", nullable = false)
+    private int reviewCount;
+
     public ProductCategory getCategory() {
         return category;
     }
@@ -90,5 +97,21 @@ public class Product extends BaseEntity {
 
     public void setOrganicCertified(boolean organicCertified) {
         this.organicCertified = organicCertified;
+    }
+
+    public BigDecimal getAvgRating() {
+        return avgRating;
+    }
+
+    public void setAvgRating(BigDecimal avgRating) {
+        this.avgRating = avgRating;
+    }
+
+    public int getReviewCount() {
+        return reviewCount;
+    }
+
+    public void setReviewCount(int reviewCount) {
+        this.reviewCount = reviewCount;
     }
 }

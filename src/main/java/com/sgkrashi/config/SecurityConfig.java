@@ -56,6 +56,7 @@ public class SecurityConfig {
             "/api/v1/farm-stay/**",
             "/api/v1/bookings/availability",
             "/api/v1/bookings/availability/**",
+            "/api/v1/reviews",
             "/uploads/**"
     };
 

@@ -19,7 +19,9 @@ public class EquipmentMapper {
                 equipment.getCategory(),
                 equipment.getDailyRate(),
                 equipment.isAvailable(),
-                thumbnailUrl
+                thumbnailUrl,
+                equipment.getAvgRating(),
+                equipment.getReviewCount()
         );
     }
 
@@ -32,7 +34,9 @@ public class EquipmentMapper {
                 equipment.getDescription(),
                 equipment.getDailyRate(),
                 equipment.isAvailable(),
-                media
+                media,
+                equipment.getAvgRating(),
+                equipment.getReviewCount()
         );
     }
 }

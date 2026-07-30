@@ -19,6 +19,8 @@ public record StayListingDetailResponse(
         String state,
         String pincode,
         boolean isAvailable,
-        List<MediaAssetResponse> media
+        List<MediaAssetResponse> media,
+        BigDecimal avgRating,
+        int reviewCount
 ) {
 }

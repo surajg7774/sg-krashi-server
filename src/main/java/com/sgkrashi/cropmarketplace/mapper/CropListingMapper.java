@@ -22,7 +22,9 @@ public class CropListingMapper {
                 listing.getQuantityAvailable(),
                 listing.getHarvestDate(),
                 category != null ? category.getName() : null,
-                thumbnailUrl
+                thumbnailUrl,
+                listing.getAvgRating(),
+                listing.getReviewCount()
         );
     }
 
@@ -46,7 +48,9 @@ public class CropListingMapper {
                 listing.getHarvestDate(),
                 categorySummary,
                 media,
-                relatedListings
+                relatedListings,
+                listing.getAvgRating(),
+                listing.getReviewCount()
         );
     }
 }

@@ -11,6 +11,8 @@ public record CropListingSummaryResponse(
         int quantityAvailable,
         LocalDate harvestDate,
         String categoryName,
-        String thumbnailUrl
+        String thumbnailUrl,
+        BigDecimal avgRating,
+        int reviewCount
 ) {
 }

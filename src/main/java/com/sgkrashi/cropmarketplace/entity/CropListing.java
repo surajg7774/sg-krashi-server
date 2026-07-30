@@ -46,6 +46,13 @@ public class CropListing extends BaseEntity {
     @Column(name = "harvest_date", nullable = false)
     private LocalDate harvestDate;
 
+    /** Denormalized from {@code reviews} (Module 12) — see {@code Product.avgRating}'s Javadoc for why. */
+    @Column(name = "avg_rating", precision = 3, scale = 2)
+    private BigDecimal avgRating;
+
+    @Column(name = "review_count", nullable = false)
+    private int reviewCount;
+
     public Long getFarmerId() {
         return farmerId;
     }
@@ -108,5 +115,21 @@ public class CropListing extends BaseEntity {
 
     public void setHarvestDate(LocalDate harvestDate) {
         this.harvestDate = harvestDate;
+    }
+
+    public BigDecimal getAvgRating() {
+        return avgRating;
+    }
+
+    public void setAvgRating(BigDecimal avgRating) {
+        this.avgRating = avgRating;
+    }
+
+    public int getReviewCount() {
+        return reviewCount;
+    }
+
+    public void setReviewCount(int reviewCount) {
+        this.reviewCount = reviewCount;
     }
 }

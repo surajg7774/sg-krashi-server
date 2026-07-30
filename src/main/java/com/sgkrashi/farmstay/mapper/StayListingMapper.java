@@ -22,7 +22,9 @@ public class StayListingMapper {
                 listing.getMaxGuests(),
                 listing.getNightlyRate(),
                 listing.isAvailable(),
-                thumbnailUrl
+                thumbnailUrl,
+                listing.getAvgRating(),
+                listing.getReviewCount()
         );
     }
 
@@ -41,7 +43,9 @@ public class StayListingMapper {
                 listing.getState(),
                 listing.getPincode(),
                 listing.isAvailable(),
-                media
+                media,
+                listing.getAvgRating(),
+                listing.getReviewCount()
         );
     }
 

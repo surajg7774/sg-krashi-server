@@ -13,6 +13,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 public interface BookingRepository extends JpaRepository<Booking, Long> {
 
@@ -85,5 +86,47 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
             @Param("blockingStatuses") List<BookingStatus> blockingStatuses,
             @Param("rangeStart") LocalDate rangeStart,
             @Param("rangeEnd") LocalDate rangeEnd
+    );
+
+    /**
+     * Candidate bookings for Module 12's review eligibility check. {@code
+     * COMPLETED} is included for correctness, but nothing in this codebase
+     * currently transitions a booking to it (see {@code
+     * ReviewEligibilityServiceImpl}'s Javadoc) — so in practice this matches
+     * {@code CONFIRMED} bookings whose {@code endDate} has already passed,
+     * treated as equivalent to "completed" for review purposes.
+     */
+    @Query("""
+            select b from Booking b
+            where b.userId = :userId
+              and b.bookableType = :bookableType
+              and b.bookableId = :bookableId
+              and (b.status = com.sgkrashi.booking.entity.BookingStatus.COMPLETED
+                   or (b.status = com.sgkrashi.booking.entity.BookingStatus.CONFIRMED and b.endDate < :today))
+            order by b.endDate desc
+            """)
+    List<Booking> findEligibleForReview(
+            @Param("userId") Long userId,
+            @Param("bookableType") BookableType bookableType,
+            @Param("bookableId") Long bookableId,
+            @Param("today") LocalDate today
+    );
+
+    /** Same eligibility rule as {@link #findEligibleForReview}, scoped to one specific claimed booking — used to re-verify a review submission's claimed transaction. */
+    @Query("""
+            select b from Booking b
+            where b.id = :bookingId
+              and b.userId = :userId
+              and b.bookableType = :bookableType
+              and b.bookableId = :bookableId
+              and (b.status = com.sgkrashi.booking.entity.BookingStatus.COMPLETED
+                   or (b.status = com.sgkrashi.booking.entity.BookingStatus.CONFIRMED and b.endDate < :today))
+            """)
+    Optional<Booking> findEligibleBookingById(
+            @Param("bookingId") Long bookingId,
+            @Param("userId") Long userId,
+            @Param("bookableType") BookableType bookableType,
+            @Param("bookableId") Long bookableId,
+            @Param("today") LocalDate today
     );
 }

@@ -13,6 +13,8 @@ public record EquipmentDetailResponse(
         String description,
         BigDecimal dailyRate,
         boolean isAvailable,
-        List<MediaAssetResponse> media
+        List<MediaAssetResponse> media,
+        BigDecimal avgRating,
+        int reviewCount
 ) {
 }

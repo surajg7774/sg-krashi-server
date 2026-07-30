@@ -60,6 +60,13 @@ public class StayListing extends BaseEntity {
     @Column(name = "is_available", nullable = false)
     private boolean available;
 
+    /** Denormalized from {@code reviews} (Module 12) — see {@code Product.avgRating}'s Javadoc for why. */
+    @Column(name = "avg_rating", precision = 3, scale = 2)
+    private BigDecimal avgRating;
+
+    @Column(name = "review_count", nullable = false)
+    private int reviewCount;
+
     public String getName() {
         return name;
     }
@@ -154,5 +161,21 @@ public class StayListing extends BaseEntity {
 
     public void setAvailable(boolean available) {
         this.available = available;
+    }
+
+    public BigDecimal getAvgRating() {
+        return avgRating;
+    }
+
+    public void setAvgRating(BigDecimal avgRating) {
+        this.avgRating = avgRating;
+    }
+
+    public int getReviewCount() {
+        return reviewCount;
+    }
+
+    public void setReviewCount(int reviewCount) {
+        this.reviewCount = reviewCount;
     }
 }

@@ -9,6 +9,8 @@ public record EquipmentSummaryResponse(
         String category,
         BigDecimal dailyRate,
         boolean isAvailable,
-        String thumbnailUrl
+        String thumbnailUrl,
+        BigDecimal avgRating,
+        int reviewCount
 ) {
 }

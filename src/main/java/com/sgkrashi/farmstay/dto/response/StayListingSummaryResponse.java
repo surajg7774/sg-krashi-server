@@ -11,6 +11,8 @@ public record StayListingSummaryResponse(
         int maxGuests,
         BigDecimal nightlyRate,
         boolean isAvailable,
-        String thumbnailUrl
+        String thumbnailUrl,
+        BigDecimal avgRating,
+        int reviewCount
 ) {
 }

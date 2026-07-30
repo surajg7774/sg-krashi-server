@@ -22,7 +22,9 @@ public class ProductMapper {
                 product.isOrganicCertified(),
                 product.getStockQty(),
                 category != null ? category.getName() : null,
-                thumbnailUrl
+                thumbnailUrl,
+                product.getAvgRating(),
+                product.getReviewCount()
         );
     }
 
@@ -46,7 +48,9 @@ public class ProductMapper {
                 product.getStockQty(),
                 categorySummary,
                 media,
-                relatedProducts
+                relatedProducts,
+                product.getAvgRating(),
+                product.getReviewCount()
         );
     }
 }

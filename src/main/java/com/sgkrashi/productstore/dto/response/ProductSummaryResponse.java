@@ -10,6 +10,8 @@ public record ProductSummaryResponse(
         boolean isOrganicCertified,
         int stockQty,
         String categoryName,
-        String thumbnailUrl
+        String thumbnailUrl,
+        BigDecimal avgRating,
+        int reviewCount
 ) {
 }

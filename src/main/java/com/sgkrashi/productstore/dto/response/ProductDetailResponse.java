@@ -15,7 +15,9 @@ public record ProductDetailResponse(
         int stockQty,
         ProductCategorySummary category,
         List<MediaAssetResponse> media,
-        List<ProductSummaryResponse> relatedProducts
+        List<ProductSummaryResponse> relatedProducts,
+        BigDecimal avgRating,
+        int reviewCount
 ) {
     public record ProductCategorySummary(Long id, String name, String slug) {
     }

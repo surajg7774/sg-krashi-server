@@ -16,7 +16,9 @@ public record CropListingDetailResponse(
         LocalDate harvestDate,
         CropCategorySummary category,
         List<MediaAssetResponse> media,
-        List<CropListingSummaryResponse> relatedListings
+        List<CropListingSummaryResponse> relatedListings,
+        BigDecimal avgRating,
+        int reviewCount
 ) {
     public record CropCategorySummary(Long id, String name, String slug) {
     }
