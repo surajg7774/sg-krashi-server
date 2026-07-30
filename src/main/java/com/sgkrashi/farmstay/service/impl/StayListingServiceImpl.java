@@ -2,6 +2,8 @@ package com.sgkrashi.farmstay.service.impl;
 
 import com.sgkrashi.common.dto.PaginatedResponse;
 import com.sgkrashi.common.exception.ResourceNotFoundException;
+import com.sgkrashi.common.util.SlugUtil;
+import com.sgkrashi.farmstay.dto.request.StayListingAdminRequest;
 import com.sgkrashi.farmstay.dto.response.StayListingDetailResponse;
 import com.sgkrashi.farmstay.dto.response.StayListingSummaryResponse;
 import com.sgkrashi.farmstay.entity.StayListing;
@@ -17,6 +19,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
@@ -65,8 +68,11 @@ public class StayListingServiceImpl implements StayListingService {
 
     @Override
     public StayListingDetailResponse getStayDetail(String idOrSlug) {
-        StayListing listing = resolveListing(idOrSlug);
+        return buildDetailResponse(resolveListing(idOrSlug));
+    }
 
+    /** See {@code ProductServiceImpl.buildDetailResponse}'s Javadoc for why Admin create/update use this directly instead of {@link #getStayDetail}. */
+    private StayListingDetailResponse buildDetailResponse(StayListing listing) {
         List<MediaAssetResponse> media = mediaAssetRepository
                 .findByOwnerTypeAndOwnerIdOrderBySortOrderAsc(STAY_OWNER_TYPE, listing.getId()).stream()
                 .map(mediaAssetMapper::toResponse)
@@ -88,5 +94,77 @@ public class StayListingServiceImpl implements StayListingService {
         } catch (NumberFormatException ex) {
             return Optional.empty();
         }
+    }
+
+    @Override
+    @Transactional
+    public StayListingDetailResponse createStayListing(StayListingAdminRequest request) {
+        StayListing listing = new StayListing();
+        applyRequest(listing, request);
+        StayListing saved = stayListingRepository.save(listing);
+        return buildDetailResponse(saved);
+    }
+
+    @Override
+    @Transactional
+    public StayListingDetailResponse updateStayListing(Long id, StayListingAdminRequest request) {
+        StayListing listing = stayListingRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Stay listing not found"));
+        applyRequest(listing, request);
+        StayListing saved = stayListingRepository.save(listing);
+        return buildDetailResponse(saved);
+    }
+
+    @Override
+    @Transactional
+    public void deactivateStayListing(Long id) {
+        StayListing listing = stayListingRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Stay listing not found"));
+        listing.setActive(false);
+        stayListingRepository.save(listing);
+    }
+
+    @Override
+    public PaginatedResponse<StayListingSummaryResponse> listStaysForAdmin(String search, int page, int size) {
+        Pageable pageable = PageRequest.of(Math.max(page, 0), size > 0 ? size : 20, Sort.by(Sort.Direction.ASC, "name"));
+        Page<StayListing> listingPage = stayListingRepository.findByNameContainingIgnoreCase(search == null ? "" : search, pageable);
+
+        List<Long> listingIds = listingPage.getContent().stream().map(StayListing::getId).toList();
+        Map<Long, String> thumbnails = mediaAssetRepository
+                .findByOwnerTypeAndOwnerIdInOrderBySortOrderAsc(STAY_OWNER_TYPE, listingIds).stream()
+                .collect(Collectors.toMap(MediaAsset::getOwnerId, MediaAsset::getUrl, (first, second) -> first));
+
+        List<StayListingSummaryResponse> items = listingPage.getContent().stream()
+                .map(listing -> stayListingMapper.toSummary(listing, thumbnails.get(listing.getId())))
+                .toList();
+
+        return PaginatedResponse.of(items, listingPage);
+    }
+
+    @Override
+    public StayListingDetailResponse getStayForAdmin(Long id) {
+        StayListing listing = stayListingRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Stay listing not found"));
+        return buildDetailResponse(listing);
+    }
+
+    private void applyRequest(StayListing listing, StayListingAdminRequest request) {
+        String slug = (request.slug() == null || request.slug().isBlank())
+                ? SlugUtil.uniqueSlugFrom(request.name(), candidate -> !candidate.equals(listing.getSlug()) && stayListingRepository.existsBySlug(candidate))
+                : request.slug();
+
+        listing.setName(request.name());
+        listing.setSlug(slug);
+        listing.setDescription(request.description());
+        listing.setMaxGuests(request.maxGuests());
+        listing.setNightlyRate(request.nightlyRate());
+        listing.setAmenities(request.amenities() == null ? "" : String.join(",", request.amenities()));
+        listing.setAddressLine1(request.addressLine1());
+        listing.setAddressLine2(request.addressLine2());
+        listing.setCity(request.city());
+        listing.setState(request.state());
+        listing.setPincode(request.pincode());
+        listing.setAvailable(request.isAvailable());
+        listing.setActive(request.isActive());
     }
 }

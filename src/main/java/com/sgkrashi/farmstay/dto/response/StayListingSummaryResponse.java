@@ -13,6 +13,7 @@ public record StayListingSummaryResponse(
         boolean isAvailable,
         String thumbnailUrl,
         BigDecimal avgRating,
-        int reviewCount
+        int reviewCount,
+        boolean isActive
 ) {
 }

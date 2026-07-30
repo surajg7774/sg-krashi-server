@@ -21,4 +21,10 @@ public interface EquipmentRepository extends JpaRepository<Equipment, Long> {
 
     @Query("select distinct e.category from Equipment e where e.isActive = true order by e.category asc")
     List<String> findDistinctCategories();
+
+    /** Uniqueness check for Module 15's Admin slug generation — see {@code ProductRepository.existsBySlug}'s Javadoc. */
+    boolean existsBySlug(String slug);
+
+    /** Module 15 — Admin list, deliberately NOT scoped to isActive (see {@code ProductService.listProductsForAdmin}'s Javadoc). */
+    Page<Equipment> findByNameContainingIgnoreCase(String name, Pageable pageable);
 }

@@ -2,15 +2,19 @@ package com.sgkrashi.productstore.service.impl;
 
 import com.sgkrashi.common.dto.PaginatedResponse;
 import com.sgkrashi.common.exception.ResourceNotFoundException;
+import com.sgkrashi.common.util.SlugUtil;
 import com.sgkrashi.media.dto.response.MediaAssetResponse;
 import com.sgkrashi.media.entity.MediaAsset;
 import com.sgkrashi.media.mapper.MediaAssetMapper;
 import com.sgkrashi.media.repository.MediaAssetRepository;
+import com.sgkrashi.productstore.dto.request.ProductAdminRequest;
 import com.sgkrashi.productstore.dto.request.ProductFilterRequest;
 import com.sgkrashi.productstore.dto.response.ProductDetailResponse;
 import com.sgkrashi.productstore.dto.response.ProductSummaryResponse;
 import com.sgkrashi.productstore.entity.Product;
+import com.sgkrashi.productstore.entity.ProductCategory;
 import com.sgkrashi.productstore.mapper.ProductMapper;
+import com.sgkrashi.productstore.repository.ProductCategoryRepository;
 import com.sgkrashi.productstore.repository.ProductRepository;
 import com.sgkrashi.productstore.service.ProductService;
 import com.sgkrashi.productstore.specification.ProductSpecifications;
@@ -20,6 +24,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
@@ -33,17 +38,20 @@ public class ProductServiceImpl implements ProductService {
     private static final int MAX_RELATED_PRODUCTS = 6;
 
     private final ProductRepository productRepository;
+    private final ProductCategoryRepository productCategoryRepository;
     private final MediaAssetRepository mediaAssetRepository;
     private final ProductMapper productMapper;
     private final MediaAssetMapper mediaAssetMapper;
 
     public ProductServiceImpl(
             ProductRepository productRepository,
+            ProductCategoryRepository productCategoryRepository,
             MediaAssetRepository mediaAssetRepository,
             ProductMapper productMapper,
             MediaAssetMapper mediaAssetMapper
     ) {
         this.productRepository = productRepository;
+        this.productCategoryRepository = productCategoryRepository;
         this.mediaAssetRepository = mediaAssetRepository;
         this.productMapper = productMapper;
         this.mediaAssetMapper = mediaAssetMapper;
@@ -85,8 +93,11 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     public ProductDetailResponse getProductDetail(String idOrSlug) {
-        Product product = resolveProduct(idOrSlug);
+        return buildDetailResponse(resolveProduct(idOrSlug));
+    }
 
+    /** Unlike {@link #getProductDetail}, takes an already-resolved entity — used by the Admin create/update methods, which must return a detail response even for a just-deactivated (isActive=false) product that {@link #resolveProduct} would 404 on. */
+    private ProductDetailResponse buildDetailResponse(Product product) {
         List<MediaAssetResponse> media = mediaAssetRepository
                 .findByOwnerTypeAndOwnerIdOrderBySortOrderAsc(PRODUCT_OWNER_TYPE, product.getId()).stream()
                 .map(mediaAssetMapper::toResponse)
@@ -135,5 +146,78 @@ public class ProductServiceImpl implements ProductService {
         } catch (NumberFormatException ex) {
             return Optional.empty();
         }
+    }
+
+    @Override
+    @Transactional
+    public ProductDetailResponse createProduct(ProductAdminRequest request) {
+        Product product = new Product();
+        applyRequest(product, request);
+        // The single point the mutation actually commits — Module 17's audit
+        // log will hook in right after this line, same one-line-addition
+        // shape as Module 13's event-publish hooks.
+        Product saved = productRepository.save(product);
+        return buildDetailResponse(saved);
+    }
+
+    @Override
+    @Transactional
+    public ProductDetailResponse updateProduct(Long id, ProductAdminRequest request) {
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
+        applyRequest(product, request);
+        Product saved = productRepository.save(product);
+        return buildDetailResponse(saved);
+    }
+
+    @Override
+    @Transactional
+    public void deactivateProduct(Long id) {
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
+        product.setActive(false);
+        productRepository.save(product);
+    }
+
+    @Override
+    public PaginatedResponse<ProductSummaryResponse> listProductsForAdmin(String search, int page, int size) {
+        Specification<Product> spec = Specification.allOf(ProductSpecifications.nameContains(search));
+
+        Pageable pageable = PageRequest.of(Math.max(page, 0), size > 0 ? size : 20, Sort.by(Sort.Direction.ASC, "name"));
+        Page<Product> productPage = productRepository.findAll(spec, pageable);
+
+        List<Long> productIds = productPage.getContent().stream().map(Product::getId).toList();
+        Map<Long, String> thumbnailsByProductId = batchThumbnails(productIds);
+
+        List<ProductSummaryResponse> items = productPage.getContent().stream()
+                .map(product -> productMapper.toSummary(product, thumbnailsByProductId.get(product.getId())))
+                .toList();
+
+        return PaginatedResponse.of(items, productPage);
+    }
+
+    @Override
+    public ProductDetailResponse getProductForAdmin(Long id) {
+        Product product = productRepository.findWithCategoryById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
+        return buildDetailResponse(product);
+    }
+
+    private void applyRequest(Product product, ProductAdminRequest request) {
+        ProductCategory category = productCategoryRepository.findById(request.categoryId())
+                .orElseThrow(() -> new ResourceNotFoundException("Product category not found"));
+
+        String slug = (request.slug() == null || request.slug().isBlank())
+                ? SlugUtil.uniqueSlugFrom(request.name(), candidate -> !candidate.equals(product.getSlug()) && productRepository.existsBySlug(candidate))
+                : request.slug();
+
+        product.setCategory(category);
+        product.setName(request.name());
+        product.setSlug(slug);
+        product.setDescription(request.description());
+        product.setPrice(request.price());
+        product.setStockQty(request.stockQty());
+        product.setOrganicCertified(request.isOrganicCertified());
+        product.setActive(request.isActive());
     }
 }

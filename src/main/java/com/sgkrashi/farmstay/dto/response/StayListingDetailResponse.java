@@ -21,6 +21,7 @@ public record StayListingDetailResponse(
         boolean isAvailable,
         List<MediaAssetResponse> media,
         BigDecimal avgRating,
-        int reviewCount
+        int reviewCount,
+        boolean isActive
 ) {
 }

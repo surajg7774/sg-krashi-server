@@ -1,5 +1,6 @@
 package com.sgkrashi.media.service.impl;
 
+import com.sgkrashi.common.exception.ResourceNotFoundException;
 import com.sgkrashi.common.exception.ValidationException;
 import com.sgkrashi.media.dto.response.MediaAssetResponse;
 import com.sgkrashi.media.entity.MediaAsset;
@@ -8,6 +9,7 @@ import com.sgkrashi.media.repository.MediaAssetRepository;
 import com.sgkrashi.media.service.MediaService;
 import com.sgkrashi.media.storage.StorageProvider;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -45,6 +47,25 @@ public class MediaServiceImpl implements MediaService {
         asset.setUrl(url);
         asset.setSortOrder(0);
 
+        MediaAsset saved = mediaAssetRepository.save(asset);
+        return mediaAssetMapper.toResponse(saved);
+    }
+
+    @Override
+    @Transactional
+    public void delete(Long id) {
+        MediaAsset asset = mediaAssetRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Media asset not found"));
+        mediaAssetRepository.delete(asset);
+        storageProvider.delete(asset.getUrl());
+    }
+
+    @Override
+    @Transactional
+    public MediaAssetResponse updateSortOrder(Long id, int sortOrder) {
+        MediaAsset asset = mediaAssetRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Media asset not found"));
+        asset.setSortOrder(sortOrder);
         MediaAsset saved = mediaAssetRepository.save(asset);
         return mediaAssetMapper.toResponse(saved);
     }

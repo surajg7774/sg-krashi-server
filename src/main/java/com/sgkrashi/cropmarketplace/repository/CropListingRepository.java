@@ -24,6 +24,10 @@ public interface CropListingRepository extends JpaRepository<CropListing, Long>,
     @EntityGraph(attributePaths = "category")
     Optional<CropListing> findByIdAndIsActiveTrue(Long id);
 
+    /** Module 15 — Admin get-by-id, deliberately NOT scoped to isActive — see {@code ProductRepository.findWithCategoryById}'s Javadoc for why this needs its own @EntityGraph. */
+    @EntityGraph(attributePaths = "category")
+    Optional<CropListing> findWithCategoryById(Long id);
+
     @EntityGraph(attributePaths = "category")
     Optional<CropListing> findBySlugAndIsActiveTrue(String slug);
 
@@ -34,4 +38,7 @@ public interface CropListingRepository extends JpaRepository<CropListing, Long>,
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select c from CropListing c where c.id = :id")
     Optional<CropListing> findByIdForUpdate(@Param("id") Long id);
+
+    /** Uniqueness check for Module 15's Admin slug generation — see {@code ProductRepository.existsBySlug}'s Javadoc. */
+    boolean existsBySlug(String slug);
 }

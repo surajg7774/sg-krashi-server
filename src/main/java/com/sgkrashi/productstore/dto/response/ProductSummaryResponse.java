@@ -12,6 +12,7 @@ public record ProductSummaryResponse(
         String categoryName,
         String thumbnailUrl,
         BigDecimal avgRating,
-        int reviewCount
+        int reviewCount,
+        boolean isActive
 ) {
 }

@@ -24,7 +24,8 @@ public class StayListingMapper {
                 listing.isAvailable(),
                 thumbnailUrl,
                 listing.getAvgRating(),
-                listing.getReviewCount()
+                listing.getReviewCount(),
+                listing.isActive()
         );
     }
 
@@ -45,7 +46,8 @@ public class StayListingMapper {
                 listing.isAvailable(),
                 media,
                 listing.getAvgRating(),
-                listing.getReviewCount()
+                listing.getReviewCount(),
+                listing.isActive()
         );
     }
 

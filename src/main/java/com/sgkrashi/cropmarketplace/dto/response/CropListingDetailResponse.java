@@ -18,7 +18,8 @@ public record CropListingDetailResponse(
         List<MediaAssetResponse> media,
         List<CropListingSummaryResponse> relatedListings,
         BigDecimal avgRating,
-        int reviewCount
+        int reviewCount,
+        boolean isActive
 ) {
     public record CropCategorySummary(Long id, String name, String slug) {
     }

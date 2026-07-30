@@ -11,6 +11,7 @@ public record EquipmentSummaryResponse(
         boolean isAvailable,
         String thumbnailUrl,
         BigDecimal avgRating,
-        int reviewCount
+        int reviewCount,
+        boolean isActive
 ) {
 }

@@ -14,4 +14,10 @@ public interface StayListingRepository extends JpaRepository<StayListing, Long> 
     Optional<StayListing> findByIdAndIsActiveTrue(Long id);
 
     Optional<StayListing> findBySlugAndIsActiveTrue(String slug);
+
+    /** Uniqueness check for Module 15's Admin slug generation — see {@code ProductRepository.existsBySlug}'s Javadoc. */
+    boolean existsBySlug(String slug);
+
+    /** Module 15 — Admin list, deliberately NOT scoped to isActive (see {@code ProductService.listProductsForAdmin}'s Javadoc). */
+    Page<StayListing> findByNameContainingIgnoreCase(String name, Pageable pageable);
 }

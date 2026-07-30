@@ -29,6 +29,10 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     @EntityGraph(attributePaths = "category")
     Optional<Product> findByIdAndIsActiveTrue(Long id);
 
+    /** Module 15 — Admin get-by-id, deliberately NOT scoped to isActive (a deactivated product must still be viewable/editable). Needs its own @EntityGraph since the plain inherited findById leaves category lazy, unlike every other lookup here. */
+    @EntityGraph(attributePaths = "category")
+    Optional<Product> findWithCategoryById(Long id);
+
     @EntityGraph(attributePaths = "category")
     Optional<Product> findBySlugAndIsActiveTrue(String slug);
 
@@ -47,4 +51,7 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
 
     /** Admin dashboard KPI — simple threshold query against the existing table, no materialized view (Year 1 scale per the architecture doc). */
     long countByStockQtyLessThanAndIsActiveTrue(int threshold);
+
+    /** Uniqueness check for Module 15's Admin slug generation — deliberately NOT scoped to isActive, so a new slug can't collide with a soft-deleted product's. */
+    boolean existsBySlug(String slug);
 }

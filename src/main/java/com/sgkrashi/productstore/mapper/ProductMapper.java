@@ -24,7 +24,8 @@ public class ProductMapper {
                 category != null ? category.getName() : null,
                 thumbnailUrl,
                 product.getAvgRating(),
-                product.getReviewCount()
+                product.getReviewCount(),
+                product.isActive()
         );
     }
 
@@ -50,7 +51,8 @@ public class ProductMapper {
                 media,
                 relatedProducts,
                 product.getAvgRating(),
-                product.getReviewCount()
+                product.getReviewCount(),
+                product.isActive()
         );
     }
 }

@@ -17,7 +17,8 @@ public record ProductDetailResponse(
         List<MediaAssetResponse> media,
         List<ProductSummaryResponse> relatedProducts,
         BigDecimal avgRating,
-        int reviewCount
+        int reviewCount,
+        boolean isActive
 ) {
     public record ProductCategorySummary(Long id, String name, String slug) {
     }
