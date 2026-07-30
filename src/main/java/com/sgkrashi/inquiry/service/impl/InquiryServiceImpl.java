@@ -1,36 +1,84 @@
 package com.sgkrashi.inquiry.service.impl;
 
-import com.sgkrashi.inquiry.dto.request.ContactSubmissionRequest;
+import com.sgkrashi.auth.security.CurrentUserProvider;
+import com.sgkrashi.common.dto.PaginatedResponse;
+import com.sgkrashi.common.exception.BusinessRuleException;
+import com.sgkrashi.common.exception.ResourceNotFoundException;
+import com.sgkrashi.inquiry.dto.request.CreateInquiryRequest;
 import com.sgkrashi.inquiry.dto.response.InquiryResponse;
 import com.sgkrashi.inquiry.entity.Inquiry;
+import com.sgkrashi.inquiry.entity.InquiryStatus;
 import com.sgkrashi.inquiry.repository.InquiryRepository;
 import com.sgkrashi.inquiry.service.InquiryService;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+
+import java.util.List;
 
 @Service
 public class InquiryServiceImpl implements InquiryService {
 
-    private static final String GENERAL_MODULE_TYPE = "GENERAL";
-    private static final String NEW_STATUS = "NEW";
-
     private final InquiryRepository inquiryRepository;
+    private final CurrentUserProvider currentUserProvider;
 
-    public InquiryServiceImpl(InquiryRepository inquiryRepository) {
+    public InquiryServiceImpl(InquiryRepository inquiryRepository, CurrentUserProvider currentUserProvider) {
         this.inquiryRepository = inquiryRepository;
+        this.currentUserProvider = currentUserProvider;
     }
 
     @Override
-    public InquiryResponse submitContact(ContactSubmissionRequest request) {
+    public InquiryResponse submitInquiry(CreateInquiryRequest request) {
         Inquiry inquiry = new Inquiry();
-        inquiry.setModuleType(GENERAL_MODULE_TYPE);
+        inquiry.setUserId(currentUserProvider.getCurrentUserIdOrNull());
+        inquiry.setModuleType(request.moduleType());
         inquiry.setName(request.name());
         inquiry.setEmail(request.email());
         inquiry.setPhone(request.phone());
         inquiry.setMessage(request.message());
-        inquiry.setStatus(NEW_STATUS);
+        inquiry.setPreferredDate(request.preferredDate());
+        inquiry.setGroupSize(request.groupSize());
+        inquiry.setStatus(InquiryStatus.NEW);
 
         Inquiry saved = inquiryRepository.save(inquiry);
+        return toResponse(saved);
+    }
 
-        return new InquiryResponse(saved.getId(), saved.getModuleType(), saved.getStatus(), saved.getCreatedAt());
+    @Override
+    public PaginatedResponse<InquiryResponse> getMyInquiries(int page, int size) {
+        Long userId = currentUserProvider.getCurrentUserId();
+        Page<Inquiry> inquiriesPage = inquiryRepository.findByUserIdOrderByCreatedAtDesc(userId, PageRequest.of(page, size));
+        List<InquiryResponse> items = inquiriesPage.getContent().stream().map(this::toResponse).toList();
+        return PaginatedResponse.of(items, inquiriesPage);
+    }
+
+    @Override
+    public InquiryResponse updateStatus(Long inquiryId, InquiryStatus newStatus) {
+        Inquiry inquiry = inquiryRepository.findById(inquiryId)
+                .orElseThrow(() -> new ResourceNotFoundException("Inquiry not found"));
+
+        if (!inquiry.getStatus().canTransitionTo(newStatus)) {
+            throw new BusinessRuleException(
+                    "Cannot move an inquiry from " + inquiry.getStatus() + " to " + newStatus);
+        }
+
+        inquiry.setStatus(newStatus);
+        Inquiry saved = inquiryRepository.save(inquiry);
+        return toResponse(saved);
+    }
+
+    private InquiryResponse toResponse(Inquiry inquiry) {
+        return new InquiryResponse(
+                inquiry.getId(),
+                inquiry.getModuleType(),
+                inquiry.getName(),
+                inquiry.getEmail(),
+                inquiry.getPhone(),
+                inquiry.getMessage(),
+                inquiry.getPreferredDate(),
+                inquiry.getGroupSize(),
+                inquiry.getStatus(),
+                inquiry.getCreatedAt()
+        );
     }
 }
