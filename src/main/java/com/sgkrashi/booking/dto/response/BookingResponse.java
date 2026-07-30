@@ -20,6 +20,7 @@ public record BookingResponse(
         boolean cancellable,
         Instant cancelledAt,
         String cancellationReason,
-        Instant createdAt
+        Instant createdAt,
+        Integer guestCount
 ) {
 }

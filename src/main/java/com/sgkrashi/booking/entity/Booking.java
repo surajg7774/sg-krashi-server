@@ -60,6 +60,16 @@ public class Booking extends BaseEntity {
     @Column(name = "cancellation_reason")
     private String cancellationReason;
 
+    /**
+     * Nullable — only meaningful for STAY bookings (Module 9). Deliberately
+     * NOT named/typed around "guests" anywhere else in this class or in
+     * {@code BookingServiceImpl}'s overlap/locking logic; this is the one
+     * concession to a stay-specific concept, kept to a single optional column
+     * rather than threading guest-count reasoning through the generic engine.
+     */
+    @Column(name = "guest_count")
+    private Integer guestCount;
+
     public Long getUserId() {
         return userId;
     }
@@ -130,5 +140,13 @@ public class Booking extends BaseEntity {
 
     public void setCancellationReason(String cancellationReason) {
         this.cancellationReason = cancellationReason;
+    }
+
+    public Integer getGuestCount() {
+        return guestCount;
+    }
+
+    public void setGuestCount(Integer guestCount) {
+        this.guestCount = guestCount;
     }
 }

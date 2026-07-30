@@ -21,7 +21,8 @@ public class BookingMapper {
                 cancellable,
                 booking.getCancelledAt(),
                 booking.getCancellationReason(),
-                booking.getCreatedAt()
+                booking.getCreatedAt(),
+                booking.getGuestCount()
         );
     }
 }

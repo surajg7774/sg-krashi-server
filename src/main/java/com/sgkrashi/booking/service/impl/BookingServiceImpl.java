@@ -9,6 +9,7 @@ import com.sgkrashi.booking.entity.Booking;
 import com.sgkrashi.booking.entity.BookingLock;
 import com.sgkrashi.booking.entity.BookingStatus;
 import com.sgkrashi.booking.mapper.BookingMapper;
+import com.sgkrashi.booking.policy.CancellationPolicy;
 import com.sgkrashi.booking.repository.BookingLockRepository;
 import com.sgkrashi.booking.repository.BookingRepository;
 import com.sgkrashi.booking.service.BookingService;
@@ -18,6 +19,8 @@ import com.sgkrashi.common.exception.ConflictException;
 import com.sgkrashi.common.exception.ResourceNotFoundException;
 import com.sgkrashi.equipmentrental.entity.Equipment;
 import com.sgkrashi.equipmentrental.repository.EquipmentRepository;
+import com.sgkrashi.farmstay.entity.StayListing;
+import com.sgkrashi.farmstay.repository.StayListingRepository;
 import com.sgkrashi.media.entity.MediaAsset;
 import com.sgkrashi.media.repository.MediaAssetRepository;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -34,7 +37,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -85,22 +87,35 @@ import java.util.stream.Collectors;
  * requestStart < existingEnd} (strict {@code <}, not {@code <=} — back-to-back
  * bookings, e.g. one ending Thursday and another starting that same Thursday,
  * do NOT conflict).
+ *
+ * <p><b>Module 9 addendum (Farm Stay):</b> confirms the claim above still
+ * holds — {@code acquireBookingLock}, {@code findOverlappingForUpdate}, and
+ * every line of the overlap-prevention transaction are byte-for-byte
+ * unchanged. What Module 9 DID add, all outside that core logic: a
+ * {@code STAY} branch in {@link #resolveBookableItem} (this method's own
+ * Javadoc already anticipated exactly this extension), an optional
+ * guest-count guard next to the existing availability check in
+ * {@link #createBooking}, and a per-{@code BookableType} cancellation window
+ * ({@link CancellationPolicy}) replacing what was a hardcoded 48-hour
+ * constant — Farm Stay needs a stricter 7-day window, and Module 8 had no
+ * second bookable type to prove that needed to be configurable yet.
  */
 @Service
 public class BookingServiceImpl implements BookingService {
 
     private static final List<BookingStatus> BLOCKING_STATUSES = List.of(BookingStatus.PENDING_PAYMENT, BookingStatus.CONFIRMED);
     private static final String EQUIPMENT_OWNER_TYPE = "EQUIPMENT";
-    /** Explicit IST anchor for the 48-hour cancellation cutoff, regardless of server locale/timezone. */
+    private static final String STAY_OWNER_TYPE = "STAY";
+    /** Explicit IST anchor for cancellation cutoffs, regardless of server locale/timezone. */
     private static final ZoneId BOOKING_ZONE = ZoneId.of("Asia/Kolkata");
-    private static final Duration FREE_CANCELLATION_WINDOW = Duration.ofHours(48);
 
-    private record BookableItem(String name, BigDecimal rate, boolean available, String thumbnailUrl) {
+    private record BookableItem(String name, BigDecimal rate, boolean available, String thumbnailUrl, Integer maxGuests) {
     }
 
     private final BookingRepository bookingRepository;
     private final BookingLockRepository bookingLockRepository;
     private final EquipmentRepository equipmentRepository;
+    private final StayListingRepository stayListingRepository;
     private final MediaAssetRepository mediaAssetRepository;
     private final CurrentUserProvider currentUserProvider;
     private final BookingMapper bookingMapper;
@@ -109,6 +124,7 @@ public class BookingServiceImpl implements BookingService {
             BookingRepository bookingRepository,
             BookingLockRepository bookingLockRepository,
             EquipmentRepository equipmentRepository,
+            StayListingRepository stayListingRepository,
             MediaAssetRepository mediaAssetRepository,
             CurrentUserProvider currentUserProvider,
             BookingMapper bookingMapper
@@ -116,6 +132,7 @@ public class BookingServiceImpl implements BookingService {
         this.bookingRepository = bookingRepository;
         this.bookingLockRepository = bookingLockRepository;
         this.equipmentRepository = equipmentRepository;
+        this.stayListingRepository = stayListingRepository;
         this.mediaAssetRepository = mediaAssetRepository;
         this.currentUserProvider = currentUserProvider;
         this.bookingMapper = bookingMapper;
@@ -132,6 +149,14 @@ public class BookingServiceImpl implements BookingService {
         BookableItem item = resolveBookableItem(request.bookableType(), request.bookableId());
         if (!item.available()) {
             throw new BusinessRuleException("\"" + item.name() + "\" is not currently available for booking");
+        }
+        // Generic-shaped on purpose: "if this bookable item caps guests and the
+        // request specifies a count, enforce it" — doesn't hardcode STAY
+        // reasoning, just compares two optional numbers next to the existing
+        // availability check above.
+        if (item.maxGuests() != null && request.guestCount() != null && request.guestCount() > item.maxGuests()) {
+            throw new BusinessRuleException(
+                    "\"" + item.name() + "\" accommodates at most " + item.maxGuests() + " guest(s)");
         }
 
         acquireBookingLock(request.bookableType(), request.bookableId());
@@ -157,6 +182,7 @@ public class BookingServiceImpl implements BookingService {
         booking.setEndDate(request.endDate());
         booking.setStatus(BookingStatus.PENDING_PAYMENT);
         booking.setTotalPrice(totalPrice);
+        booking.setGuestCount(request.guestCount());
         Booking saved = bookingRepository.save(booking);
 
         return bookingMapper.toResponse(saved, item.name(), item.thumbnailUrl(), isCancellable(saved));
@@ -212,7 +238,8 @@ public class BookingServiceImpl implements BookingService {
             throw new BusinessRuleException("This booking can no longer be cancelled");
         }
         if (!isCancellable(booking)) {
-            throw new BusinessRuleException("Bookings can only be cancelled more than 48 hours before the start date");
+            String label = CancellationPolicy.forType(booking.getBookableType()).windowLabel();
+            throw new BusinessRuleException("Bookings can only be cancelled more than " + label + " before the start date");
         }
 
         booking.setStatus(BookingStatus.CANCELLED);
@@ -258,7 +285,8 @@ public class BookingServiceImpl implements BookingService {
         if (booking.getStatus() != BookingStatus.PENDING_PAYMENT && booking.getStatus() != BookingStatus.CONFIRMED) {
             return false;
         }
-        Instant cutoff = booking.getStartDate().atStartOfDay(BOOKING_ZONE).toInstant().minus(FREE_CANCELLATION_WINDOW);
+        Duration window = CancellationPolicy.forType(booking.getBookableType()).freeWindow();
+        Instant cutoff = booking.getStartDate().atStartOfDay(BOOKING_ZONE).toInstant().minus(window);
         return Instant.now().isBefore(cutoff);
     }
 
@@ -271,17 +299,30 @@ public class BookingServiceImpl implements BookingService {
         return booking;
     }
 
-    /** Only EQUIPMENT exists today; STAY (Module 9) will extend this branch, not replace this method's shape. */
+    /**
+     * EQUIPMENT (Module 8) and STAY (Module 9) branches — exactly the
+     * extension this method's original Javadoc anticipated, not a change to
+     * the class's overlap-prevention/locking logic above.
+     */
     private BookableItem resolveBookableItem(BookableType bookableType, Long bookableId) {
         if (bookableType == BookableType.EQUIPMENT) {
             Equipment equipment = equipmentRepository.findByIdAndIsActiveTrue(bookableId)
                     .orElseThrow(() -> new ResourceNotFoundException("Equipment not found"));
-            String thumbnailUrl = mediaAssetRepository
-                    .findByOwnerTypeAndOwnerIdOrderBySortOrderAsc(EQUIPMENT_OWNER_TYPE, equipment.getId())
-                    .stream().findFirst().map(MediaAsset::getUrl).orElse(null);
-            return new BookableItem(equipment.getName(), equipment.getDailyRate(), equipment.isAvailable(), thumbnailUrl);
+            String thumbnailUrl = firstThumbnail(EQUIPMENT_OWNER_TYPE, equipment.getId());
+            return new BookableItem(equipment.getName(), equipment.getDailyRate(), equipment.isAvailable(), thumbnailUrl, null);
+        }
+        if (bookableType == BookableType.STAY) {
+            StayListing stay = stayListingRepository.findByIdAndIsActiveTrue(bookableId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Stay listing not found"));
+            String thumbnailUrl = firstThumbnail(STAY_OWNER_TYPE, stay.getId());
+            return new BookableItem(stay.getName(), stay.getNightlyRate(), stay.isAvailable(), thumbnailUrl, stay.getMaxGuests());
         }
         throw new ResourceNotFoundException("Unsupported bookable type: " + bookableType);
+    }
+
+    private String firstThumbnail(String ownerType, Long ownerId) {
+        return mediaAssetRepository.findByOwnerTypeAndOwnerIdOrderBySortOrderAsc(ownerType, ownerId)
+                .stream().findFirst().map(MediaAsset::getUrl).orElse(null);
     }
 
     private List<BookingResponse> buildResponses(List<Booking> bookings) {
@@ -290,18 +331,37 @@ public class BookingServiceImpl implements BookingService {
                 .map(Booking::getBookableId)
                 .distinct()
                 .toList();
+        List<Long> stayIds = bookings.stream()
+                .filter(booking -> booking.getBookableType() == BookableType.STAY)
+                .map(Booking::getBookableId)
+                .distinct()
+                .toList();
 
         Map<Long, Equipment> equipmentById = equipmentRepository.findAllById(equipmentIds).stream()
                 .collect(Collectors.toMap(Equipment::getId, equipment -> equipment));
+        Map<Long, StayListing> stayById = stayListingRepository.findAllById(stayIds).stream()
+                .collect(Collectors.toMap(StayListing::getId, stay -> stay));
+
         Map<Long, String> thumbnailsByEquipmentId = mediaAssetRepository
                 .findByOwnerTypeAndOwnerIdInOrderBySortOrderAsc(EQUIPMENT_OWNER_TYPE, equipmentIds).stream()
+                .collect(Collectors.toMap(MediaAsset::getOwnerId, MediaAsset::getUrl, (first, second) -> first, HashMap::new));
+        Map<Long, String> thumbnailsByStayId = mediaAssetRepository
+                .findByOwnerTypeAndOwnerIdInOrderBySortOrderAsc(STAY_OWNER_TYPE, stayIds).stream()
                 .collect(Collectors.toMap(MediaAsset::getOwnerId, MediaAsset::getUrl, (first, second) -> first, HashMap::new));
 
         return bookings.stream()
                 .map(booking -> {
-                    Equipment equipment = equipmentById.get(booking.getBookableId());
-                    String name = equipment != null ? equipment.getName() : "Unknown item";
-                    String thumbnailUrl = thumbnailsByEquipmentId.get(booking.getBookableId());
+                    String name;
+                    String thumbnailUrl;
+                    if (booking.getBookableType() == BookableType.EQUIPMENT) {
+                        Equipment equipment = equipmentById.get(booking.getBookableId());
+                        name = equipment != null ? equipment.getName() : "Unknown item";
+                        thumbnailUrl = thumbnailsByEquipmentId.get(booking.getBookableId());
+                    } else {
+                        StayListing stay = stayById.get(booking.getBookableId());
+                        name = stay != null ? stay.getName() : "Unknown item";
+                        thumbnailUrl = thumbnailsByStayId.get(booking.getBookableId());
+                    }
                     return bookingMapper.toResponse(booking, name, thumbnailUrl, isCancellable(booking));
                 })
                 .toList();
