@@ -55,13 +55,22 @@ public class EquipmentServiceImpl implements EquipmentService {
     }
 
     @Override
-    public PaginatedResponse<EquipmentSummaryResponse> listEquipment(String category, int page, int size) {
+    public PaginatedResponse<EquipmentSummaryResponse> listEquipment(String category, String search, int page, int size) {
         Pageable pageable = PageRequest.of(
                 Math.max(page, 0), size > 0 ? size : 20, Sort.by(Sort.Direction.ASC, "name"));
 
-        Page<Equipment> equipmentPage = (category == null || category.isBlank())
-                ? equipmentRepository.findByIsActiveTrue(pageable)
-                : equipmentRepository.findByIsActiveTrueAndCategoryIgnoreCase(category, pageable);
+        boolean hasCategory = category != null && !category.isBlank();
+        boolean hasSearch = search != null && !search.isBlank();
+        Page<Equipment> equipmentPage;
+        if (hasCategory && hasSearch) {
+            equipmentPage = equipmentRepository.findByIsActiveTrueAndCategoryIgnoreCaseAndNameContainingIgnoreCase(category, search, pageable);
+        } else if (hasSearch) {
+            equipmentPage = equipmentRepository.findByIsActiveTrueAndNameContainingIgnoreCase(search, pageable);
+        } else if (hasCategory) {
+            equipmentPage = equipmentRepository.findByIsActiveTrueAndCategoryIgnoreCase(category, pageable);
+        } else {
+            equipmentPage = equipmentRepository.findByIsActiveTrue(pageable);
+        }
 
         List<Long> equipmentIds = equipmentPage.getContent().stream().map(Equipment::getId).toList();
         Map<Long, String> thumbnails = batchThumbnails(equipmentIds);

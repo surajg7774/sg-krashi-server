@@ -9,7 +9,8 @@ import java.util.List;
 
 public interface EquipmentService {
 
-    PaginatedResponse<EquipmentSummaryResponse> listEquipment(String category, int page, int size);
+    /** {@code search} added in Module 18 — Equipment never had public name search before (only category). */
+    PaginatedResponse<EquipmentSummaryResponse> listEquipment(String category, String search, int page, int size);
 
     /** @throws com.sgkrashi.common.exception.ResourceNotFoundException if no active equipment matches */
     EquipmentDetailResponse getEquipmentDetail(String idOrSlug);

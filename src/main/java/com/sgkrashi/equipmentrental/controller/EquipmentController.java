@@ -28,10 +28,11 @@ public class EquipmentController {
     @GetMapping
     public ResponseEntity<ApiResponse<PaginatedResponse<EquipmentSummaryResponse>>> list(
             @RequestParam(required = false) String category,
+            @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
-        var result = equipmentService.listEquipment(category, page, size);
+        var result = equipmentService.listEquipment(category, search, page, size);
         return ResponseEntity.ok(ApiResponse.success(result, "Equipment retrieved"));
     }
 

@@ -11,6 +11,9 @@ public interface StayListingRepository extends JpaRepository<StayListing, Long> 
 
     Page<StayListing> findByIsActiveTrue(Pageable pageable);
 
+    /** Module 18 — Stay listings never had any public filter before (not even category); this is genuinely new. */
+    Page<StayListing> findByIsActiveTrueAndNameContainingIgnoreCase(String name, Pageable pageable);
+
     Optional<StayListing> findByIdAndIsActiveTrue(Long id);
 
     Optional<StayListing> findBySlugAndIsActiveTrue(String slug);

@@ -56,9 +56,11 @@ public class StayListingServiceImpl implements StayListingService {
     }
 
     @Override
-    public PaginatedResponse<StayListingSummaryResponse> listStays(int page, int size) {
+    public PaginatedResponse<StayListingSummaryResponse> listStays(String search, int page, int size) {
         Pageable pageable = PageRequest.of(Math.max(page, 0), size > 0 ? size : 20, Sort.by(Sort.Direction.ASC, "name"));
-        Page<StayListing> listingPage = stayListingRepository.findByIsActiveTrue(pageable);
+        Page<StayListing> listingPage = (search == null || search.isBlank())
+                ? stayListingRepository.findByIsActiveTrue(pageable)
+                : stayListingRepository.findByIsActiveTrueAndNameContainingIgnoreCase(search, pageable);
 
         List<Long> listingIds = listingPage.getContent().stream().map(StayListing::getId).toList();
         Map<Long, String> thumbnails = mediaAssetRepository

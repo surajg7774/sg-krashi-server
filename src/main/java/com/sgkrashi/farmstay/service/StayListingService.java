@@ -7,7 +7,8 @@ import com.sgkrashi.farmstay.dto.response.StayListingSummaryResponse;
 
 public interface StayListingService {
 
-    PaginatedResponse<StayListingSummaryResponse> listStays(int page, int size);
+    /** {@code search} added in Module 18 — Stay listings never had any public filter before. */
+    PaginatedResponse<StayListingSummaryResponse> listStays(String search, int page, int size);
 
     /** @throws com.sgkrashi.common.exception.ResourceNotFoundException if no active listing matches */
     StayListingDetailResponse getStayDetail(String idOrSlug);

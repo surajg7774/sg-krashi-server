@@ -25,10 +25,11 @@ public class StayListingController {
 
     @GetMapping
     public ResponseEntity<ApiResponse<PaginatedResponse<StayListingSummaryResponse>>> list(
+            @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
-        return ResponseEntity.ok(ApiResponse.success(stayListingService.listStays(page, size), "Stay listings retrieved"));
+        return ResponseEntity.ok(ApiResponse.success(stayListingService.listStays(search, page, size), "Stay listings retrieved"));
     }
 
     @GetMapping("/{idOrSlug}")

@@ -15,6 +15,11 @@ public interface EquipmentRepository extends JpaRepository<Equipment, Long> {
 
     Page<Equipment> findByIsActiveTrueAndCategoryIgnoreCase(String category, Pageable pageable);
 
+    /** Module 18 — Equipment never had public name search before (only category filtering); this is genuinely new. */
+    Page<Equipment> findByIsActiveTrueAndNameContainingIgnoreCase(String name, Pageable pageable);
+
+    Page<Equipment> findByIsActiveTrueAndCategoryIgnoreCaseAndNameContainingIgnoreCase(String category, String name, Pageable pageable);
+
     Optional<Equipment> findByIdAndIsActiveTrue(Long id);
 
     Optional<Equipment> findBySlugAndIsActiveTrue(String slug);
