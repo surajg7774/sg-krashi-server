@@ -59,6 +59,13 @@ public final class CropListingSpecifications {
                 : cb.lessThanOrEqualTo(root.get("harvestDate"), to);
     }
 
+    /** Module 20 — Farmer-scoped listing management; {@code null} skips the filter (Admin's unscoped listing view). */
+    public static Specification<CropListing> belongsToFarmer(Long farmerId) {
+        return (root, query, cb) -> farmerId == null
+                ? null
+                : cb.equal(root.get("farmerId"), farmerId);
+    }
+
     public static Specification<CropListing> nameContains(String search) {
         return (root, query, cb) -> (search == null || search.isBlank())
                 ? null

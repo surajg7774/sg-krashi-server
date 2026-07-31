@@ -11,4 +11,11 @@ public interface AdminUserService {
     AdminUserDetailResponse getUserDetail(Long userId);
 
     AdminUserResponse updateStatus(Long userId, boolean isActive);
+
+    /**
+     * Module 20 — grants or revokes {@code roleName} on {@code userId}.
+     * Refuses to leave a user with zero roles, and refuses to let the
+     * caller revoke ADMIN/SUPER_ADMIN from their own account (self-demotion).
+     */
+    AdminUserResponse updateRoles(Long userId, String roleName, boolean assign);
 }

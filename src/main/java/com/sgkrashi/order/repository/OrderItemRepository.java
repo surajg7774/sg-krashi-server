@@ -69,4 +69,23 @@ public interface OrderItemRepository extends JpaRepository<OrderItem, Long> {
             @Param("itemType") ItemType itemType,
             @Param("targetId") Long targetId
     );
+
+    /**
+     * Module 20 — Farmer dashboard stats. Plain JPQL (not native SQL) suffices
+     * here, unlike Module 19's analytics queries: there's no date-bucketing
+     * function involved, just a straight aggregate over a join, so Spring
+     * Data can return a real {@code long} directly with no Object[]/casting.
+     */
+    @Query("""
+            select count(distinct oi.order.id) from OrderItem oi
+            where oi.cropListing.farmerId = :farmerId and oi.order.status in :statuses
+            """)
+    long countDistinctOrdersByFarmerId(@Param("farmerId") Long farmerId, @Param("statuses") List<OrderStatus> statuses);
+
+    /** Companion to {@link #countDistinctOrdersByFarmerId} — total units across those same order items. */
+    @Query("""
+            select coalesce(sum(oi.quantity), 0) from OrderItem oi
+            where oi.cropListing.farmerId = :farmerId and oi.order.status in :statuses
+            """)
+    long sumQuantityByFarmerId(@Param("farmerId") Long farmerId, @Param("statuses") List<OrderStatus> statuses);
 }

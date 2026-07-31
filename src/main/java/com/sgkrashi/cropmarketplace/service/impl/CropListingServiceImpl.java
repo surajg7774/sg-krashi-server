@@ -152,7 +152,14 @@ public class CropListingServiceImpl implements CropListingService {
     @Override
     @Transactional
     public CropListingDetailResponse createCropListing(CropListingAdminRequest request) {
+        return createCropListing(request, null);
+    }
+
+    @Override
+    @Transactional
+    public CropListingDetailResponse createCropListing(CropListingAdminRequest request, Long farmerId) {
         CropListing listing = new CropListing();
+        listing.setFarmerId(farmerId);
         applyRequest(listing, request);
         CropListing saved = cropListingRepository.save(listing);
         CropListingDetailResponse after = buildDetailResponse(saved);
@@ -187,6 +194,24 @@ public class CropListingServiceImpl implements CropListingService {
     @Override
     public PaginatedResponse<CropListingSummaryResponse> listCropListingsForAdmin(String search, int page, int size) {
         Specification<CropListing> spec = Specification.allOf(CropListingSpecifications.nameContains(search));
+        Pageable pageable = PageRequest.of(Math.max(page, 0), size > 0 ? size : 20, Sort.by(Sort.Direction.ASC, "name"));
+        Page<CropListing> listingPage = cropListingRepository.findAll(spec, pageable);
+
+        List<Long> listingIds = listingPage.getContent().stream().map(CropListing::getId).toList();
+        Map<Long, String> thumbnailsByListingId = batchThumbnails(listingIds);
+
+        List<CropListingSummaryResponse> items = listingPage.getContent().stream()
+                .map(listing -> cropListingMapper.toSummary(listing, thumbnailsByListingId.get(listing.getId())))
+                .toList();
+
+        return PaginatedResponse.of(items, listingPage);
+    }
+
+    @Override
+    public PaginatedResponse<CropListingSummaryResponse> listCropListingsForFarmer(String search, Long farmerId, int page, int size) {
+        Specification<CropListing> spec = Specification.allOf(
+                CropListingSpecifications.belongsToFarmer(farmerId),
+                CropListingSpecifications.nameContains(search));
         Pageable pageable = PageRequest.of(Math.max(page, 0), size > 0 ? size : 20, Sort.by(Sort.Direction.ASC, "name"));
         Page<CropListing> listingPage = cropListingRepository.findAll(spec, pageable);
 

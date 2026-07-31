@@ -1,5 +1,6 @@
 package com.sgkrashi.admin.controller;
 
+import com.sgkrashi.admin.dto.request.UpdateUserRolesRequest;
 import com.sgkrashi.admin.dto.request.UpdateUserStatusRequest;
 import com.sgkrashi.admin.dto.response.AdminUserDetailResponse;
 import com.sgkrashi.admin.dto.response.AdminUserResponse;
@@ -52,5 +53,14 @@ public class AdminUserController {
     ) {
         return ResponseEntity.ok(ApiResponse.success(
                 adminUserService.updateStatus(id, request.isActive()), "User status updated"));
+    }
+
+    @PatchMapping("/{id}/roles")
+    public ResponseEntity<ApiResponse<AdminUserResponse>> updateRoles(
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateUserRolesRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(
+                adminUserService.updateRoles(id, request.roleName(), request.assign()), "User roles updated"));
     }
 }

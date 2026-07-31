@@ -41,4 +41,11 @@ public interface CropListingRepository extends JpaRepository<CropListing, Long>,
 
     /** Uniqueness check for Module 15's Admin slug generation — see {@code ProductRepository.existsBySlug}'s Javadoc. */
     boolean existsBySlug(String slug);
+
+    /** Module 20 — ownership check for Farmer-scoped get/update/delete. Deliberately returns empty (never throws) so callers can 404, not 403, on a listing that exists but isn't this farmer's — see {@code CustomerAddressRepository}'s Module 4 precedent. */
+    Optional<CropListing> findByIdAndFarmerId(Long id, Long farmerId);
+
+    long countByFarmerId(Long farmerId);
+
+    long countByFarmerIdAndIsActiveTrue(Long farmerId);
 }

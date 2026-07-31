@@ -16,6 +16,13 @@ public interface CropListingService {
     /** Module 15 — Admin only. */
     CropListingDetailResponse createCropListing(CropListingAdminRequest request);
 
+    /**
+     * Module 20 - Farmer-owned creation. farmerId is always the caller's own
+     * id, resolved server-side by FarmerCropListingService - never accepted
+     * on CropListingAdminRequest, which structurally has no such field.
+     */
+    CropListingDetailResponse createCropListing(CropListingAdminRequest request, Long farmerId);
+
     /** Module 15 — Admin only. */
     CropListingDetailResponse updateCropListing(Long id, CropListingAdminRequest request);
 
@@ -24,6 +31,9 @@ public interface CropListingService {
 
     /** Module 15 — Admin only. Unlike {@link #listCropListings}, does NOT filter by isActive — see {@code ProductService.listProductsForAdmin}'s Javadoc for why. */
     PaginatedResponse<CropListingSummaryResponse> listCropListingsForAdmin(String search, int page, int size);
+
+    /** Module 20 - same admin-style listing (search, includes inactive), additionally scoped to one farmer's own listings. */
+    PaginatedResponse<CropListingSummaryResponse> listCropListingsForFarmer(String search, Long farmerId, int page, int size);
 
     /** Module 15 — Admin only. Unlike {@link #getCropListingDetail}, does NOT require the listing to be active. */
     CropListingDetailResponse getCropListingForAdmin(Long id);

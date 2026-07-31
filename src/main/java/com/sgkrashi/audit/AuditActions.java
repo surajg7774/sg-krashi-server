@@ -16,6 +16,8 @@ public final class AuditActions {
 
     public static final String USER_ACTIVATED = "USER_ACTIVATED";
     public static final String USER_DEACTIVATED = "USER_DEACTIVATED";
+    public static final String USER_ROLE_ASSIGNED = "USER_ROLE_ASSIGNED";
+    public static final String USER_ROLE_REMOVED = "USER_ROLE_REMOVED";
 
     public static final String PRODUCT_CREATED = "PRODUCT_CREATED";
     public static final String PRODUCT_UPDATED = "PRODUCT_UPDATED";
