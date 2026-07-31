@@ -1,5 +1,7 @@
 package com.sgkrashi.productstore.service.impl;
 
+import com.sgkrashi.audit.AuditActions;
+import com.sgkrashi.audit.service.AuditLogService;
 import com.sgkrashi.common.dto.PaginatedResponse;
 import com.sgkrashi.common.exception.ResourceNotFoundException;
 import com.sgkrashi.common.util.SlugUtil;
@@ -35,6 +37,7 @@ import java.util.stream.Collectors;
 public class ProductServiceImpl implements ProductService {
 
     private static final String PRODUCT_OWNER_TYPE = "PRODUCT";
+    private static final String ENTITY_TYPE_PRODUCT = "PRODUCT";
     private static final int MAX_RELATED_PRODUCTS = 6;
 
     private final ProductRepository productRepository;
@@ -42,19 +45,22 @@ public class ProductServiceImpl implements ProductService {
     private final MediaAssetRepository mediaAssetRepository;
     private final ProductMapper productMapper;
     private final MediaAssetMapper mediaAssetMapper;
+    private final AuditLogService auditLogService;
 
     public ProductServiceImpl(
             ProductRepository productRepository,
             ProductCategoryRepository productCategoryRepository,
             MediaAssetRepository mediaAssetRepository,
             ProductMapper productMapper,
-            MediaAssetMapper mediaAssetMapper
+            MediaAssetMapper mediaAssetMapper,
+            AuditLogService auditLogService
     ) {
         this.productRepository = productRepository;
         this.productCategoryRepository = productCategoryRepository;
         this.mediaAssetRepository = mediaAssetRepository;
         this.productMapper = productMapper;
         this.mediaAssetMapper = mediaAssetMapper;
+        this.auditLogService = auditLogService;
     }
 
     /**
@@ -153,11 +159,13 @@ public class ProductServiceImpl implements ProductService {
     public ProductDetailResponse createProduct(ProductAdminRequest request) {
         Product product = new Product();
         applyRequest(product, request);
-        // The single point the mutation actually commits — Module 17's audit
-        // log will hook in right after this line, same one-line-addition
+        // The single point the mutation actually commits — confirms Module
+        // 15's own note: this really was a clean one-line addition, same
         // shape as Module 13's event-publish hooks.
         Product saved = productRepository.save(product);
-        return buildDetailResponse(saved);
+        ProductDetailResponse after = buildDetailResponse(saved);
+        auditLogService.record(AuditActions.PRODUCT_CREATED, ENTITY_TYPE_PRODUCT, saved.getId(), null, after);
+        return after;
     }
 
     @Override
@@ -165,9 +173,12 @@ public class ProductServiceImpl implements ProductService {
     public ProductDetailResponse updateProduct(Long id, ProductAdminRequest request) {
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
+        ProductDetailResponse before = buildDetailResponse(product);
         applyRequest(product, request);
         Product saved = productRepository.save(product);
-        return buildDetailResponse(saved);
+        ProductDetailResponse after = buildDetailResponse(saved);
+        auditLogService.record(AuditActions.PRODUCT_UPDATED, ENTITY_TYPE_PRODUCT, id, before, after);
+        return after;
     }
 
     @Override
@@ -175,8 +186,10 @@ public class ProductServiceImpl implements ProductService {
     public void deactivateProduct(Long id) {
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
+        ProductDetailResponse before = buildDetailResponse(product);
         product.setActive(false);
-        productRepository.save(product);
+        Product saved = productRepository.save(product);
+        auditLogService.record(AuditActions.PRODUCT_DEACTIVATED, ENTITY_TYPE_PRODUCT, id, before, buildDetailResponse(saved));
     }
 
     @Override

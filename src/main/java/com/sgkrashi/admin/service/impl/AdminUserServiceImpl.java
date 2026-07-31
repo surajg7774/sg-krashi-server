@@ -5,6 +5,8 @@ import com.sgkrashi.admin.dto.response.AdminUserResponse;
 import com.sgkrashi.admin.mapper.AdminUserMapper;
 import com.sgkrashi.admin.service.AdminUserService;
 import com.sgkrashi.admin.specification.UserSpecifications;
+import com.sgkrashi.audit.AuditActions;
+import com.sgkrashi.audit.service.AuditLogService;
 import com.sgkrashi.auth.entity.User;
 import com.sgkrashi.auth.repository.UserRepository;
 import com.sgkrashi.auth.security.CurrentUserProvider;
@@ -26,6 +28,8 @@ import java.util.List;
 @Service
 public class AdminUserServiceImpl implements AdminUserService {
 
+    private static final String ENTITY_TYPE_USER = "USER";
+
     private final UserRepository userRepository;
     private final OrderRepository orderRepository;
     private final BookingRepository bookingRepository;
@@ -33,6 +37,7 @@ public class AdminUserServiceImpl implements AdminUserService {
     private final ReviewRepository reviewRepository;
     private final CurrentUserProvider currentUserProvider;
     private final AdminUserMapper adminUserMapper;
+    private final AuditLogService auditLogService;
 
     public AdminUserServiceImpl(
             UserRepository userRepository,
@@ -41,7 +46,8 @@ public class AdminUserServiceImpl implements AdminUserService {
             InquiryRepository inquiryRepository,
             ReviewRepository reviewRepository,
             CurrentUserProvider currentUserProvider,
-            AdminUserMapper adminUserMapper
+            AdminUserMapper adminUserMapper,
+            AuditLogService auditLogService
     ) {
         this.userRepository = userRepository;
         this.orderRepository = orderRepository;
@@ -50,6 +56,7 @@ public class AdminUserServiceImpl implements AdminUserService {
         this.reviewRepository = reviewRepository;
         this.currentUserProvider = currentUserProvider;
         this.adminUserMapper = adminUserMapper;
+        this.auditLogService = auditLogService;
     }
 
     @Override
@@ -88,9 +95,14 @@ public class AdminUserServiceImpl implements AdminUserService {
         }
 
         User user = getUserOrThrow(userId);
+        AdminUserResponse before = adminUserMapper.toSummary(user);
         user.setActive(isActive);
         User saved = userRepository.save(user);
-        return adminUserMapper.toSummary(saved);
+        AdminUserResponse after = adminUserMapper.toSummary(saved);
+        auditLogService.record(
+                isActive ? AuditActions.USER_ACTIVATED : AuditActions.USER_DEACTIVATED,
+                ENTITY_TYPE_USER, userId, before, after);
+        return after;
     }
 
     private User getUserOrThrow(Long userId) {

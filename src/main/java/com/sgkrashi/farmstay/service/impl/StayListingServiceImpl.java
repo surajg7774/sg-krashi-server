@@ -1,5 +1,7 @@
 package com.sgkrashi.farmstay.service.impl;
 
+import com.sgkrashi.audit.AuditActions;
+import com.sgkrashi.audit.service.AuditLogService;
 import com.sgkrashi.common.dto.PaginatedResponse;
 import com.sgkrashi.common.exception.ResourceNotFoundException;
 import com.sgkrashi.common.util.SlugUtil;
@@ -31,22 +33,26 @@ import java.util.stream.Collectors;
 public class StayListingServiceImpl implements StayListingService {
 
     private static final String STAY_OWNER_TYPE = "STAY";
+    private static final String ENTITY_TYPE_STAY_LISTING = "STAY_LISTING";
 
     private final StayListingRepository stayListingRepository;
     private final MediaAssetRepository mediaAssetRepository;
     private final StayListingMapper stayListingMapper;
     private final MediaAssetMapper mediaAssetMapper;
+    private final AuditLogService auditLogService;
 
     public StayListingServiceImpl(
             StayListingRepository stayListingRepository,
             MediaAssetRepository mediaAssetRepository,
             StayListingMapper stayListingMapper,
-            MediaAssetMapper mediaAssetMapper
+            MediaAssetMapper mediaAssetMapper,
+            AuditLogService auditLogService
     ) {
         this.stayListingRepository = stayListingRepository;
         this.mediaAssetRepository = mediaAssetRepository;
         this.stayListingMapper = stayListingMapper;
         this.mediaAssetMapper = mediaAssetMapper;
+        this.auditLogService = auditLogService;
     }
 
     @Override
@@ -102,7 +108,9 @@ public class StayListingServiceImpl implements StayListingService {
         StayListing listing = new StayListing();
         applyRequest(listing, request);
         StayListing saved = stayListingRepository.save(listing);
-        return buildDetailResponse(saved);
+        StayListingDetailResponse after = buildDetailResponse(saved);
+        auditLogService.record(AuditActions.STAY_LISTING_CREATED, ENTITY_TYPE_STAY_LISTING, saved.getId(), null, after);
+        return after;
     }
 
     @Override
@@ -110,9 +118,12 @@ public class StayListingServiceImpl implements StayListingService {
     public StayListingDetailResponse updateStayListing(Long id, StayListingAdminRequest request) {
         StayListing listing = stayListingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Stay listing not found"));
+        StayListingDetailResponse before = buildDetailResponse(listing);
         applyRequest(listing, request);
         StayListing saved = stayListingRepository.save(listing);
-        return buildDetailResponse(saved);
+        StayListingDetailResponse after = buildDetailResponse(saved);
+        auditLogService.record(AuditActions.STAY_LISTING_UPDATED, ENTITY_TYPE_STAY_LISTING, id, before, after);
+        return after;
     }
 
     @Override
@@ -120,8 +131,10 @@ public class StayListingServiceImpl implements StayListingService {
     public void deactivateStayListing(Long id) {
         StayListing listing = stayListingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Stay listing not found"));
+        StayListingDetailResponse before = buildDetailResponse(listing);
         listing.setActive(false);
-        stayListingRepository.save(listing);
+        StayListing saved = stayListingRepository.save(listing);
+        auditLogService.record(AuditActions.STAY_LISTING_DEACTIVATED, ENTITY_TYPE_STAY_LISTING, id, before, buildDetailResponse(saved));
     }
 
     @Override

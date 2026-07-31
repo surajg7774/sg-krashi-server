@@ -1,5 +1,7 @@
 package com.sgkrashi.equipmentrental.service.impl;
 
+import com.sgkrashi.audit.AuditActions;
+import com.sgkrashi.audit.service.AuditLogService;
 import com.sgkrashi.common.dto.PaginatedResponse;
 import com.sgkrashi.common.exception.ResourceNotFoundException;
 import com.sgkrashi.common.util.SlugUtil;
@@ -30,22 +32,26 @@ import java.util.stream.Collectors;
 public class EquipmentServiceImpl implements EquipmentService {
 
     private static final String EQUIPMENT_OWNER_TYPE = "EQUIPMENT";
+    private static final String ENTITY_TYPE_EQUIPMENT = "EQUIPMENT";
 
     private final EquipmentRepository equipmentRepository;
     private final MediaAssetRepository mediaAssetRepository;
     private final EquipmentMapper equipmentMapper;
     private final MediaAssetMapper mediaAssetMapper;
+    private final AuditLogService auditLogService;
 
     public EquipmentServiceImpl(
             EquipmentRepository equipmentRepository,
             MediaAssetRepository mediaAssetRepository,
             EquipmentMapper equipmentMapper,
-            MediaAssetMapper mediaAssetMapper
+            MediaAssetMapper mediaAssetMapper,
+            AuditLogService auditLogService
     ) {
         this.equipmentRepository = equipmentRepository;
         this.mediaAssetRepository = mediaAssetRepository;
         this.equipmentMapper = equipmentMapper;
         this.mediaAssetMapper = mediaAssetMapper;
+        this.auditLogService = auditLogService;
     }
 
     @Override
@@ -114,7 +120,9 @@ public class EquipmentServiceImpl implements EquipmentService {
         Equipment equipment = new Equipment();
         applyRequest(equipment, request);
         Equipment saved = equipmentRepository.save(equipment);
-        return buildDetailResponse(saved);
+        EquipmentDetailResponse after = buildDetailResponse(saved);
+        auditLogService.record(AuditActions.EQUIPMENT_CREATED, ENTITY_TYPE_EQUIPMENT, saved.getId(), null, after);
+        return after;
     }
 
     @Override
@@ -122,9 +130,12 @@ public class EquipmentServiceImpl implements EquipmentService {
     public EquipmentDetailResponse updateEquipment(Long id, EquipmentAdminRequest request) {
         Equipment equipment = equipmentRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Equipment not found"));
+        EquipmentDetailResponse before = buildDetailResponse(equipment);
         applyRequest(equipment, request);
         Equipment saved = equipmentRepository.save(equipment);
-        return buildDetailResponse(saved);
+        EquipmentDetailResponse after = buildDetailResponse(saved);
+        auditLogService.record(AuditActions.EQUIPMENT_UPDATED, ENTITY_TYPE_EQUIPMENT, id, before, after);
+        return after;
     }
 
     @Override
@@ -132,8 +143,10 @@ public class EquipmentServiceImpl implements EquipmentService {
     public void deactivateEquipment(Long id) {
         Equipment equipment = equipmentRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Equipment not found"));
+        EquipmentDetailResponse before = buildDetailResponse(equipment);
         equipment.setActive(false);
-        equipmentRepository.save(equipment);
+        Equipment saved = equipmentRepository.save(equipment);
+        auditLogService.record(AuditActions.EQUIPMENT_DEACTIVATED, ENTITY_TYPE_EQUIPMENT, id, before, buildDetailResponse(saved));
     }
 
     @Override

@@ -1,5 +1,7 @@
 package com.sgkrashi.cropmarketplace.service.impl;
 
+import com.sgkrashi.audit.AuditActions;
+import com.sgkrashi.audit.service.AuditLogService;
 import com.sgkrashi.common.dto.PaginatedResponse;
 import com.sgkrashi.common.exception.ResourceNotFoundException;
 import com.sgkrashi.common.util.SlugUtil;
@@ -36,6 +38,7 @@ import java.util.stream.Collectors;
 public class CropListingServiceImpl implements CropListingService {
 
     private static final String CROP_LISTING_OWNER_TYPE = "CROP_LISTING";
+    private static final String ENTITY_TYPE_CROP_LISTING = "CROP_LISTING";
     private static final int MAX_RELATED_LISTINGS = 6;
 
     private final CropListingRepository cropListingRepository;
@@ -43,19 +46,22 @@ public class CropListingServiceImpl implements CropListingService {
     private final MediaAssetRepository mediaAssetRepository;
     private final CropListingMapper cropListingMapper;
     private final MediaAssetMapper mediaAssetMapper;
+    private final AuditLogService auditLogService;
 
     public CropListingServiceImpl(
             CropListingRepository cropListingRepository,
             CropCategoryRepository cropCategoryRepository,
             MediaAssetRepository mediaAssetRepository,
             CropListingMapper cropListingMapper,
-            MediaAssetMapper mediaAssetMapper
+            MediaAssetMapper mediaAssetMapper,
+            AuditLogService auditLogService
     ) {
         this.cropListingRepository = cropListingRepository;
         this.cropCategoryRepository = cropCategoryRepository;
         this.mediaAssetRepository = mediaAssetRepository;
         this.cropListingMapper = cropListingMapper;
         this.mediaAssetMapper = mediaAssetMapper;
+        this.auditLogService = auditLogService;
     }
 
     @Override
@@ -149,7 +155,9 @@ public class CropListingServiceImpl implements CropListingService {
         CropListing listing = new CropListing();
         applyRequest(listing, request);
         CropListing saved = cropListingRepository.save(listing);
-        return buildDetailResponse(saved);
+        CropListingDetailResponse after = buildDetailResponse(saved);
+        auditLogService.record(AuditActions.CROP_LISTING_CREATED, ENTITY_TYPE_CROP_LISTING, saved.getId(), null, after);
+        return after;
     }
 
     @Override
@@ -157,9 +165,12 @@ public class CropListingServiceImpl implements CropListingService {
     public CropListingDetailResponse updateCropListing(Long id, CropListingAdminRequest request) {
         CropListing listing = cropListingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Crop listing not found"));
+        CropListingDetailResponse before = buildDetailResponse(listing);
         applyRequest(listing, request);
         CropListing saved = cropListingRepository.save(listing);
-        return buildDetailResponse(saved);
+        CropListingDetailResponse after = buildDetailResponse(saved);
+        auditLogService.record(AuditActions.CROP_LISTING_UPDATED, ENTITY_TYPE_CROP_LISTING, id, before, after);
+        return after;
     }
 
     @Override
@@ -167,8 +178,10 @@ public class CropListingServiceImpl implements CropListingService {
     public void deactivateCropListing(Long id) {
         CropListing listing = cropListingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Crop listing not found"));
+        CropListingDetailResponse before = buildDetailResponse(listing);
         listing.setActive(false);
-        cropListingRepository.save(listing);
+        CropListing saved = cropListingRepository.save(listing);
+        auditLogService.record(AuditActions.CROP_LISTING_DEACTIVATED, ENTITY_TYPE_CROP_LISTING, id, before, buildDetailResponse(saved));
     }
 
     @Override

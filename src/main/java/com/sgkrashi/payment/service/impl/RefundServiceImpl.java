@@ -1,5 +1,7 @@
 package com.sgkrashi.payment.service.impl;
 
+import com.sgkrashi.audit.AuditActions;
+import com.sgkrashi.audit.service.AuditLogService;
 import com.sgkrashi.booking.entity.Booking;
 import com.sgkrashi.booking.service.BookingService;
 import com.sgkrashi.common.exception.BusinessRuleException;
@@ -35,17 +37,20 @@ public class RefundServiceImpl implements RefundService {
     private final PaymentGatewayAdapter gatewayAdapter;
     private final OrderService orderService;
     private final BookingService bookingService;
+    private final AuditLogService auditLogService;
 
     public RefundServiceImpl(
             PaymentRepository paymentRepository,
             PaymentGatewayAdapter gatewayAdapter,
             OrderService orderService,
-            BookingService bookingService
+            BookingService bookingService,
+            AuditLogService auditLogService
     ) {
         this.paymentRepository = paymentRepository;
         this.gatewayAdapter = gatewayAdapter;
         this.orderService = orderService;
         this.bookingService = bookingService;
+        this.auditLogService = auditLogService;
     }
 
     @Override
@@ -94,6 +99,8 @@ public class RefundServiceImpl implements RefundService {
             throw new BusinessRuleException("Only a paid payment can be refunded (current status: " + payment.getStatus() + ")");
         }
 
+        PaymentSnapshot before = new PaymentSnapshot(payment.getStatus(), payment.getRefundId(), payment.getRefundedAt());
+
         GatewayRefundResult refundResult = gatewayAdapter.refund(payment.getGatewayPaymentId(), payment.getAmount());
 
         Instant refundedAt = Instant.now();
@@ -104,6 +111,17 @@ public class RefundServiceImpl implements RefundService {
 
         markPayableRefunded.run();
 
+        // Audited here, on the real-success path only — never on the
+        // idempotent short-circuit above, since that path made no gateway
+        // call and changed nothing.
+        PaymentSnapshot after = new PaymentSnapshot(payment.getStatus(), payment.getRefundId(), payment.getRefundedAt());
+        String action = PAYABLE_TYPE_ORDER.equals(payableType) ? AuditActions.ORDER_REFUNDED : AuditActions.BOOKING_REFUNDED;
+        auditLogService.record(action, payableType, payableId, before, after);
+
         return new RefundResultResponse(payment.getId(), payment.getRefundId(), payment.getAmount(), payment.getCurrency(), refundedAt, false);
+    }
+
+    /** Minimal before/after audit snapshot — just the fields that actually change on a refund, not the full Payment entity. */
+    private record PaymentSnapshot(PaymentStatus status, String refundId, Instant refundedAt) {
     }
 }

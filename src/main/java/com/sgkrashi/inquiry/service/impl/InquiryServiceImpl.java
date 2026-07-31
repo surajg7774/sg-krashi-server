@@ -1,5 +1,7 @@
 package com.sgkrashi.inquiry.service.impl;
 
+import com.sgkrashi.audit.AuditActions;
+import com.sgkrashi.audit.service.AuditLogService;
 import com.sgkrashi.auth.entity.User;
 import com.sgkrashi.auth.repository.UserRepository;
 import com.sgkrashi.auth.security.CurrentUserProvider;
@@ -32,21 +34,26 @@ import java.util.stream.Collectors;
 @Service
 public class InquiryServiceImpl implements InquiryService {
 
+    private static final String ENTITY_TYPE_INQUIRY = "INQUIRY";
+
     private final InquiryRepository inquiryRepository;
     private final UserRepository userRepository;
     private final CurrentUserProvider currentUserProvider;
     private final ApplicationEventPublisher eventPublisher;
+    private final AuditLogService auditLogService;
 
     public InquiryServiceImpl(
             InquiryRepository inquiryRepository,
             UserRepository userRepository,
             CurrentUserProvider currentUserProvider,
-            ApplicationEventPublisher eventPublisher
+            ApplicationEventPublisher eventPublisher,
+            AuditLogService auditLogService
     ) {
         this.inquiryRepository = inquiryRepository;
         this.userRepository = userRepository;
         this.currentUserProvider = currentUserProvider;
         this.eventPublisher = eventPublisher;
+        this.auditLogService = auditLogService;
     }
 
     @Override
@@ -122,13 +129,16 @@ public class InquiryServiceImpl implements InquiryService {
     @Transactional
     public AdminInquiryResponse adminUpdate(Long inquiryId, InquiryStatus newStatus, String adminNotes) {
         Inquiry inquiry = getOrThrow(inquiryId);
+        AdminInquiryResponse before = getInquiryForAdmin(inquiryId);
         inquiry.setAdminNotes(adminNotes);
         inquiryRepository.save(inquiry);
 
         if (newStatus != inquiry.getStatus()) {
             updateStatus(inquiryId, newStatus);
         }
-        return getInquiryForAdmin(inquiryId);
+        AdminInquiryResponse after = getInquiryForAdmin(inquiryId);
+        auditLogService.record(AuditActions.INQUIRY_STATUS_UPDATED, ENTITY_TYPE_INQUIRY, inquiryId, before, after);
+        return after;
     }
 
     private Inquiry getOrThrow(Long inquiryId) {

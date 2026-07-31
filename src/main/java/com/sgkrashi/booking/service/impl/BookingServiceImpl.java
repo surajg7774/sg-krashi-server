@@ -1,5 +1,7 @@
 package com.sgkrashi.booking.service.impl;
 
+import com.sgkrashi.audit.AuditActions;
+import com.sgkrashi.audit.service.AuditLogService;
 import com.sgkrashi.auth.entity.User;
 import com.sgkrashi.auth.repository.UserRepository;
 import com.sgkrashi.auth.security.CurrentUserProvider;
@@ -121,6 +123,7 @@ public class BookingServiceImpl implements BookingService {
     private static final String EQUIPMENT_OWNER_TYPE = "EQUIPMENT";
     private static final String STAY_OWNER_TYPE = "STAY";
     private static final String PAYABLE_TYPE_BOOKING = "BOOKING";
+    private static final String ENTITY_TYPE_BOOKING = "BOOKING";
     /** Explicit IST anchor for cancellation cutoffs, regardless of server locale/timezone. */
     private static final ZoneId BOOKING_ZONE = ZoneId.of("Asia/Kolkata");
 
@@ -137,6 +140,7 @@ public class BookingServiceImpl implements BookingService {
     private final CurrentUserProvider currentUserProvider;
     private final BookingMapper bookingMapper;
     private final ApplicationEventPublisher eventPublisher;
+    private final AuditLogService auditLogService;
 
     public BookingServiceImpl(
             BookingRepository bookingRepository,
@@ -148,7 +152,8 @@ public class BookingServiceImpl implements BookingService {
             PaymentRepository paymentRepository,
             CurrentUserProvider currentUserProvider,
             BookingMapper bookingMapper,
-            ApplicationEventPublisher eventPublisher
+            ApplicationEventPublisher eventPublisher,
+            AuditLogService auditLogService
     ) {
         this.bookingRepository = bookingRepository;
         this.bookingLockRepository = bookingLockRepository;
@@ -160,6 +165,7 @@ public class BookingServiceImpl implements BookingService {
         this.currentUserProvider = currentUserProvider;
         this.bookingMapper = bookingMapper;
         this.eventPublisher = eventPublisher;
+        this.auditLogService = auditLogService;
     }
 
     @Override
@@ -385,6 +391,7 @@ public class BookingServiceImpl implements BookingService {
             throw new BusinessRuleException("This booking's status is final and cannot be changed");
         }
 
+        AdminBookingResponse before = getBookingDetailForAdmin(bookingId);
         booking.setAdminNotes(adminNotes);
         if (newStatus != booking.getStatus()) {
             booking.setStatus(newStatus);
@@ -398,11 +405,13 @@ public class BookingServiceImpl implements BookingService {
         User user = userRepository.findById(saved.getUserId()).orElse(null);
         Payment payment = paymentRepository.findByPayableTypeAndPayableId(PAYABLE_TYPE_BOOKING, bookingId).orElse(null);
         boolean refunded = payment != null && payment.getStatus() == PaymentStatus.REFUNDED;
-        return bookingMapper.toAdminResponse(
+        AdminBookingResponse after = bookingMapper.toAdminResponse(
                 saved, item.name(), item.thumbnailUrl(),
                 user != null ? user.getName() : "Unknown",
                 user != null ? user.getEmail() : null,
                 refunded, payment != null ? payment.getRefundedAt() : null);
+        auditLogService.record(AuditActions.BOOKING_STATUS_UPDATED, ENTITY_TYPE_BOOKING, bookingId, before, after);
+        return after;
     }
 
     private List<AdminBookingResponse> buildAdminResponses(List<Booking> bookings, Map<Long, User> usersById, Map<Long, Payment> paymentsByBookingId) {

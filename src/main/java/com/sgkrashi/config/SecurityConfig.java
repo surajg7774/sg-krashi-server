@@ -57,7 +57,8 @@ public class SecurityConfig {
             "/api/v1/bookings/availability",
             "/api/v1/bookings/availability/**",
             "/api/v1/reviews",
-            "/uploads/**"
+            "/uploads/**",
+            "/api/v1/cms/content-blocks"
     };
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;

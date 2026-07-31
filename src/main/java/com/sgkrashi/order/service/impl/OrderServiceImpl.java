@@ -1,5 +1,7 @@
 package com.sgkrashi.order.service.impl;
 
+import com.sgkrashi.audit.AuditActions;
+import com.sgkrashi.audit.service.AuditLogService;
 import com.sgkrashi.auth.entity.User;
 import com.sgkrashi.auth.repository.UserRepository;
 import com.sgkrashi.auth.security.CurrentUserProvider;
@@ -63,6 +65,7 @@ public class OrderServiceImpl implements OrderService {
     private static final String PRODUCT_OWNER_TYPE = "PRODUCT";
     private static final String CROP_LISTING_OWNER_TYPE = "CROP_LISTING";
     private static final String PAYABLE_TYPE_ORDER = "ORDER";
+    private static final String ENTITY_TYPE_ORDER = "ORDER";
 
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
@@ -78,6 +81,7 @@ public class OrderServiceImpl implements OrderService {
     private final CurrentUserProvider currentUserProvider;
     private final OrderMapper orderMapper;
     private final ApplicationEventPublisher eventPublisher;
+    private final AuditLogService auditLogService;
 
     public OrderServiceImpl(
             OrderRepository orderRepository,
@@ -93,7 +97,8 @@ public class OrderServiceImpl implements OrderService {
             PaymentRepository paymentRepository,
             CurrentUserProvider currentUserProvider,
             OrderMapper orderMapper,
-            ApplicationEventPublisher eventPublisher
+            ApplicationEventPublisher eventPublisher,
+            AuditLogService auditLogService
     ) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
@@ -109,6 +114,7 @@ public class OrderServiceImpl implements OrderService {
         this.currentUserProvider = currentUserProvider;
         this.orderMapper = orderMapper;
         this.eventPublisher = eventPublisher;
+        this.auditLogService = auditLogService;
     }
 
     /** One locked row (product or crop listing) paired with the cart line that references it. */
@@ -414,6 +420,7 @@ public class OrderServiceImpl implements OrderService {
         }
 
         Order order = getOrderEntityOrThrow(orderId);
+        AdminOrderDetailResponse before = getOrderDetailForAdmin(orderId);
         order.setAdminNotes(adminNotes);
         if (newStatus != order.getStatus()) {
             order.setStatus(newStatus);
@@ -422,7 +429,9 @@ public class OrderServiceImpl implements OrderService {
         } else {
             orderRepository.save(order);
         }
-        return getOrderDetailForAdmin(orderId);
+        AdminOrderDetailResponse after = getOrderDetailForAdmin(orderId);
+        auditLogService.record(AuditActions.ORDER_STATUS_UPDATED, ENTITY_TYPE_ORDER, orderId, before, after);
+        return after;
     }
 
     private Map<Long, String> thumbnailMap(String ownerType, List<OrderItem> items, ItemType itemType) {
