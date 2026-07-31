@@ -1,6 +1,8 @@
 package com.sgkrashi.order.mapper;
 
 import com.sgkrashi.common.entity.ItemType;
+import com.sgkrashi.order.dto.response.AdminOrderDetailResponse;
+import com.sgkrashi.order.dto.response.AdminOrderSummaryResponse;
 import com.sgkrashi.order.dto.response.OrderItemResponse;
 import com.sgkrashi.order.dto.response.OrderResponse;
 import com.sgkrashi.order.dto.response.OrderStatusEventResponse;
@@ -10,6 +12,7 @@ import com.sgkrashi.order.entity.OrderItem;
 import com.sgkrashi.order.entity.OrderStatusHistory;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -85,6 +88,64 @@ public class OrderMapper {
                 order.getStatus(),
                 order.getTotalAmount(),
                 itemCount,
+                order.getCreatedAt()
+        );
+    }
+
+    public AdminOrderSummaryResponse toAdminSummaryResponse(
+            Order order, int itemCount, String userName, String userEmail, boolean refunded, Instant refundedAt
+    ) {
+        return new AdminOrderSummaryResponse(
+                order.getId(),
+                order.getOrderNumber(),
+                order.getUserId(),
+                userName,
+                userEmail,
+                order.getStatus(),
+                order.getTotalAmount(),
+                itemCount,
+                refunded,
+                refundedAt,
+                order.getCreatedAt()
+        );
+    }
+
+    public AdminOrderDetailResponse toAdminDetailResponse(
+            Order order,
+            List<OrderItem> items,
+            List<OrderStatusHistory> history,
+            Map<Long, String> productThumbnails,
+            Map<Long, String> cropListingThumbnails,
+            String userName,
+            String userEmail,
+            boolean refunded,
+            Instant refundedAt
+    ) {
+        List<OrderItemResponse> itemResponses = items.stream()
+                .map(item -> toItemResponse(item, productThumbnails, cropListingThumbnails))
+                .toList();
+        List<OrderStatusEventResponse> historyResponses = history.stream()
+                .map(this::toStatusEventResponse)
+                .toList();
+
+        return new AdminOrderDetailResponse(
+                order.getId(),
+                order.getOrderNumber(),
+                order.getUserId(),
+                userName,
+                userEmail,
+                order.getStatus(),
+                order.getTotalAmount(),
+                order.getShippingLine1(),
+                order.getShippingLine2(),
+                order.getShippingCity(),
+                order.getShippingState(),
+                order.getShippingPincode(),
+                itemResponses,
+                historyResponses,
+                order.getAdminNotes(),
+                refunded,
+                refundedAt,
                 order.getCreatedAt()
         );
     }

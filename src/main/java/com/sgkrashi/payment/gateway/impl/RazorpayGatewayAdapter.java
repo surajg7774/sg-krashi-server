@@ -2,7 +2,9 @@ package com.sgkrashi.payment.gateway.impl;
 
 import com.razorpay.RazorpayClient;
 import com.razorpay.RazorpayException;
+import com.razorpay.Refund;
 import com.sgkrashi.payment.gateway.GatewayOrderResult;
+import com.sgkrashi.payment.gateway.GatewayRefundResult;
 import com.sgkrashi.payment.gateway.GatewayWebhookEvent;
 import com.sgkrashi.payment.gateway.PaymentGatewayAdapter;
 import org.json.JSONObject;
@@ -94,6 +96,28 @@ public class RazorpayGatewayAdapter implements PaymentGatewayAdapter {
     @Override
     public String getPublicKeyId() {
         return keyId;
+    }
+
+    /**
+     * Full refund only (Module 16 scope) — {@code amount} is passed explicitly
+     * (in paise, same conversion as {@link #createOrder}) rather than omitted,
+     * even though omitting it would also mean "refund the full amount" per
+     * Razorpay's API: being explicit here means a future partial-refund bug
+     * elsewhere can never accidentally under- or over-refund silently.
+     */
+    @Override
+    public GatewayRefundResult refund(String gatewayPaymentId, BigDecimal amount) {
+        try {
+            RazorpayClient client = new RazorpayClient(keyId, keySecret);
+
+            JSONObject request = new JSONObject();
+            request.put("amount", amount.multiply(BigDecimal.valueOf(100)).intValueExact());
+
+            Refund refund = client.payments.refund(gatewayPaymentId, request);
+            return new GatewayRefundResult(refund.get("id"), refund.get("status"));
+        } catch (RazorpayException e) {
+            throw new IllegalStateException("Unable to process Razorpay refund for payment " + gatewayPaymentId, e);
+        }
     }
 
     private String computeHmac(String rawBody) {

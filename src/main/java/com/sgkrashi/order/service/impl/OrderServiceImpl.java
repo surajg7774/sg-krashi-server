@@ -1,5 +1,7 @@
 package com.sgkrashi.order.service.impl;
 
+import com.sgkrashi.auth.entity.User;
+import com.sgkrashi.auth.repository.UserRepository;
 import com.sgkrashi.auth.security.CurrentUserProvider;
 import com.sgkrashi.cart.entity.Cart;
 import com.sgkrashi.cart.entity.CartItem;
@@ -17,7 +19,10 @@ import com.sgkrashi.media.entity.MediaAsset;
 import com.sgkrashi.media.repository.MediaAssetRepository;
 import com.sgkrashi.notification.event.OrderConfirmedEvent;
 import com.sgkrashi.notification.event.PaymentFailedEvent;
+import com.sgkrashi.notification.event.RefundProcessedEvent;
 import com.sgkrashi.order.dto.request.CheckoutRequest;
+import com.sgkrashi.order.dto.response.AdminOrderDetailResponse;
+import com.sgkrashi.order.dto.response.AdminOrderSummaryResponse;
 import com.sgkrashi.order.dto.response.OrderResponse;
 import com.sgkrashi.order.dto.response.OrderSummaryResponse;
 import com.sgkrashi.order.entity.Order;
@@ -29,15 +34,22 @@ import com.sgkrashi.order.repository.OrderItemRepository;
 import com.sgkrashi.order.repository.OrderRepository;
 import com.sgkrashi.order.repository.OrderStatusHistoryRepository;
 import com.sgkrashi.order.service.OrderService;
+import com.sgkrashi.order.specification.OrderSpecifications;
+import com.sgkrashi.payment.entity.Payment;
+import com.sgkrashi.payment.entity.PaymentStatus;
+import com.sgkrashi.payment.repository.PaymentRepository;
 import com.sgkrashi.productstore.entity.Product;
 import com.sgkrashi.productstore.repository.ProductRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -50,6 +62,7 @@ public class OrderServiceImpl implements OrderService {
 
     private static final String PRODUCT_OWNER_TYPE = "PRODUCT";
     private static final String CROP_LISTING_OWNER_TYPE = "CROP_LISTING";
+    private static final String PAYABLE_TYPE_ORDER = "ORDER";
 
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
@@ -60,6 +73,8 @@ public class OrderServiceImpl implements OrderService {
     private final CropListingRepository cropListingRepository;
     private final AddressRepository addressRepository;
     private final MediaAssetRepository mediaAssetRepository;
+    private final UserRepository userRepository;
+    private final PaymentRepository paymentRepository;
     private final CurrentUserProvider currentUserProvider;
     private final OrderMapper orderMapper;
     private final ApplicationEventPublisher eventPublisher;
@@ -74,6 +89,8 @@ public class OrderServiceImpl implements OrderService {
             CropListingRepository cropListingRepository,
             AddressRepository addressRepository,
             MediaAssetRepository mediaAssetRepository,
+            UserRepository userRepository,
+            PaymentRepository paymentRepository,
             CurrentUserProvider currentUserProvider,
             OrderMapper orderMapper,
             ApplicationEventPublisher eventPublisher
@@ -87,6 +104,8 @@ public class OrderServiceImpl implements OrderService {
         this.cropListingRepository = cropListingRepository;
         this.addressRepository = addressRepository;
         this.mediaAssetRepository = mediaAssetRepository;
+        this.userRepository = userRepository;
+        this.paymentRepository = paymentRepository;
         this.currentUserProvider = currentUserProvider;
         this.orderMapper = orderMapper;
         this.eventPublisher = eventPublisher;
@@ -294,10 +313,125 @@ public class OrderServiceImpl implements OrderService {
         eventPublisher.publishEvent(new PaymentFailedEvent("ORDER", order.getId(), order.getUserId()));
     }
 
+    /**
+     * Called only from {@code RefundServiceImpl}, itself already guarded
+     * against calling this twice for the same refund — see that class's
+     * idempotency writeup. The {@code REFUNDED} check here is a defensive
+     * second layer, not the primary guarantee.
+     */
+    @Override
+    @Transactional
+    public void markRefunded(Long orderId) {
+        Order order = getOrderEntityOrThrow(orderId);
+        if (order.getStatus() == OrderStatus.REFUNDED) {
+            return;
+        }
+        order.setStatus(OrderStatus.REFUNDED);
+        orderRepository.save(order);
+        recordStatusHistory(order, OrderStatus.REFUNDED, "Refund processed");
+        eventPublisher.publishEvent(new RefundProcessedEvent(PAYABLE_TYPE_ORDER, order.getId(), order.getUserId(), order.getTotalAmount()));
+    }
+
     @Override
     public Order getOrderEntityOrThrow(Long orderId) {
         return orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
+    }
+
+    @Override
+    public PaginatedResponse<AdminOrderSummaryResponse> listOrdersForAdmin(
+            OrderStatus status, Long userId, Instant dateFrom, Instant dateTo, int page, int size
+    ) {
+        Specification<Order> spec = Specification.allOf(
+                OrderSpecifications.hasStatus(status),
+                OrderSpecifications.hasUserId(userId),
+                OrderSpecifications.createdAfter(dateFrom),
+                OrderSpecifications.createdBefore(dateTo));
+
+        Page<Order> ordersPage = orderRepository.findAll(spec,
+                PageRequest.of(Math.max(page, 0), size > 0 ? size : 20, Sort.by("createdAt").descending()));
+        List<Order> orders = ordersPage.getContent();
+
+        List<Long> userIds = orders.stream().map(Order::getUserId).distinct().toList();
+        Map<Long, User> usersById = userRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(User::getId, u -> u));
+
+        List<Long> orderIds = orders.stream().map(Order::getId).toList();
+        Map<Long, Payment> paymentsByOrderId = paymentRepository.findByPayableTypeAndPayableIdIn(PAYABLE_TYPE_ORDER, orderIds).stream()
+                .collect(Collectors.toMap(Payment::getPayableId, p -> p));
+
+        List<AdminOrderSummaryResponse> items = orders.stream()
+                .map(order -> {
+                    User user = usersById.get(order.getUserId());
+                    Payment payment = paymentsByOrderId.get(order.getId());
+                    boolean refunded = payment != null && payment.getStatus() == PaymentStatus.REFUNDED;
+                    int itemCount = (int) orderItemRepository.countByOrderId(order.getId());
+                    return orderMapper.toAdminSummaryResponse(
+                            order, itemCount,
+                            user != null ? user.getName() : "Unknown",
+                            user != null ? user.getEmail() : null,
+                            refunded, payment != null ? payment.getRefundedAt() : null);
+                })
+                .toList();
+        return PaginatedResponse.of(items, ordersPage);
+    }
+
+    @Override
+    public AdminOrderDetailResponse getOrderDetailForAdmin(Long orderId) {
+        Order order = getOrderEntityOrThrow(orderId);
+        User user = userRepository.findById(order.getUserId()).orElse(null);
+        Payment payment = paymentRepository.findByPayableTypeAndPayableId(PAYABLE_TYPE_ORDER, orderId).orElse(null);
+        boolean refunded = payment != null && payment.getStatus() == PaymentStatus.REFUNDED;
+
+        List<OrderItem> items = orderItemRepository.findByOrderId(order.getId());
+        List<OrderStatusHistory> history = orderStatusHistoryRepository.findByOrderIdOrderByCreatedAtAsc(order.getId());
+        Map<Long, String> productThumbnails = thumbnailMap(PRODUCT_OWNER_TYPE, items, ItemType.PRODUCT);
+        Map<Long, String> cropListingThumbnails = thumbnailMap(CROP_LISTING_OWNER_TYPE, items, ItemType.CROP_LISTING);
+
+        return orderMapper.toAdminDetailResponse(
+                order, items, history, productThumbnails, cropListingThumbnails,
+                user != null ? user.getName() : "Unknown",
+                user != null ? user.getEmail() : null,
+                refunded, payment != null ? payment.getRefundedAt() : null);
+    }
+
+    /**
+     * Admin-settable targets are deliberately limited to CONFIRMED/PAYMENT_FAILED
+     * — the two states a missed/delayed webhook might need manual reconciliation
+     * for. REFUNDED is never accepted here: it must only ever be reached via
+     * {@code RefundService}'s real gateway refund, or the Order/Payment
+     * REFUNDED-ness invariant (an Order is only REFUNDED if its Payment
+     * genuinely was) would be silently broken.
+     */
+    @Override
+    @Transactional
+    public AdminOrderDetailResponse updateOrderStatus(Long orderId, OrderStatus newStatus, String adminNotes) {
+        if (newStatus == OrderStatus.REFUNDED) {
+            throw new BusinessRuleException("Use the refund endpoint to mark an order as refunded");
+        }
+        if (newStatus != OrderStatus.CONFIRMED && newStatus != OrderStatus.PAYMENT_FAILED) {
+            throw new BusinessRuleException("Cannot set an order's status to " + newStatus);
+        }
+
+        Order order = getOrderEntityOrThrow(orderId);
+        order.setAdminNotes(adminNotes);
+        if (newStatus != order.getStatus()) {
+            order.setStatus(newStatus);
+            orderRepository.save(order);
+            recordStatusHistory(order, newStatus, "Updated by admin");
+        } else {
+            orderRepository.save(order);
+        }
+        return getOrderDetailForAdmin(orderId);
+    }
+
+    private Map<Long, String> thumbnailMap(String ownerType, List<OrderItem> items, ItemType itemType) {
+        List<Long> ids = items.stream()
+                .filter(item -> item.getItemType() == itemType)
+                .map(OrderItem::getReferencedItemId)
+                .toList();
+        return mediaAssetRepository.findByOwnerTypeAndOwnerIdInOrderBySortOrderAsc(ownerType, ids).stream()
+                .collect(Collectors.toMap(MediaAsset::getOwnerId, MediaAsset::getUrl, (first, second) -> first));
     }
 
     private String generateOrderNumber() {

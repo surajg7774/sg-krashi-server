@@ -47,6 +47,10 @@ public class Order extends BaseEntity {
     @Column(name = "shipping_pincode", nullable = false, length = 10)
     private String shippingPincode;
 
+    /** Internal, Admin-only free text (Module 16) — never shown to the customer. */
+    @Column(name = "admin_notes", columnDefinition = "TEXT")
+    private String adminNotes;
+
     public Long getUserId() {
         return userId;
     }
@@ -117,5 +121,13 @@ public class Order extends BaseEntity {
 
     public void setShippingPincode(String shippingPincode) {
         this.shippingPincode = shippingPincode;
+    }
+
+    public String getAdminNotes() {
+        return adminNotes;
+    }
+
+    public void setAdminNotes(String adminNotes) {
+        this.adminNotes = adminNotes;
     }
 }

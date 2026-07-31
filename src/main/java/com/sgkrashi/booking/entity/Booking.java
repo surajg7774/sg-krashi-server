@@ -70,6 +70,10 @@ public class Booking extends BaseEntity {
     @Column(name = "guest_count")
     private Integer guestCount;
 
+    /** Internal, Admin-only free text (Module 16) — never shown to the customer. */
+    @Column(name = "admin_notes", columnDefinition = "TEXT")
+    private String adminNotes;
+
     public Long getUserId() {
         return userId;
     }
@@ -148,5 +152,13 @@ public class Booking extends BaseEntity {
 
     public void setGuestCount(Integer guestCount) {
         this.guestCount = guestCount;
+    }
+
+    public String getAdminNotes() {
+        return adminNotes;
+    }
+
+    public void setAdminNotes(String adminNotes) {
+        this.adminNotes = adminNotes;
     }
 }

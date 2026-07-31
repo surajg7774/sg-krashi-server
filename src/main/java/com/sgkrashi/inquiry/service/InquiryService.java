@@ -2,7 +2,9 @@ package com.sgkrashi.inquiry.service;
 
 import com.sgkrashi.common.dto.PaginatedResponse;
 import com.sgkrashi.inquiry.dto.request.CreateInquiryRequest;
+import com.sgkrashi.inquiry.dto.response.AdminInquiryResponse;
 import com.sgkrashi.inquiry.dto.response.InquiryResponse;
+import com.sgkrashi.inquiry.entity.InquiryModuleType;
 import com.sgkrashi.inquiry.entity.InquiryStatus;
 
 public interface InquiryService {
@@ -31,4 +33,21 @@ public interface InquiryService {
      * so that module only needs to add a thin controller method.
      */
     InquiryResponse updateStatus(Long inquiryId, InquiryStatus newStatus);
+
+    /** Admin-wide listing (Module 16) — every inquiry platform-wide, guest-submitted included. */
+    PaginatedResponse<AdminInquiryResponse> listInquiriesForAdmin(InquiryStatus status, InquiryModuleType moduleType, int page, int size);
+
+    AdminInquiryResponse getInquiryForAdmin(Long inquiryId);
+
+    /**
+     * Always persists {@code adminNotes}. Only calls the existing {@link
+     * #updateStatus} — untouched by this module — when {@code newStatus}
+     * actually differs from the inquiry's current status, since {@code
+     * InquiryStatus#canTransitionTo} has no self-transition entries and would
+     * otherwise reject a same-status resubmission that was only meant to save
+     * notes.
+     *
+     * @throws com.sgkrashi.common.exception.BusinessRuleException if {@code newStatus} is a genuinely invalid transition from the current status
+     */
+    AdminInquiryResponse adminUpdate(Long inquiryId, InquiryStatus newStatus, String adminNotes);
 }

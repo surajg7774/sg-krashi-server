@@ -1,8 +1,11 @@
 package com.sgkrashi.booking.service.impl;
 
+import com.sgkrashi.auth.entity.User;
+import com.sgkrashi.auth.repository.UserRepository;
 import com.sgkrashi.auth.security.CurrentUserProvider;
 import com.sgkrashi.booking.dto.request.CancelBookingRequest;
 import com.sgkrashi.booking.dto.request.CreateBookingRequest;
+import com.sgkrashi.booking.dto.response.AdminBookingResponse;
 import com.sgkrashi.booking.dto.response.BookingResponse;
 import com.sgkrashi.booking.entity.BookableType;
 import com.sgkrashi.booking.entity.Booking;
@@ -13,6 +16,7 @@ import com.sgkrashi.booking.policy.CancellationPolicy;
 import com.sgkrashi.booking.repository.BookingLockRepository;
 import com.sgkrashi.booking.repository.BookingRepository;
 import com.sgkrashi.booking.service.BookingService;
+import com.sgkrashi.booking.specification.BookingSpecifications;
 import com.sgkrashi.common.dto.PaginatedResponse;
 import com.sgkrashi.common.exception.BusinessRuleException;
 import com.sgkrashi.common.exception.ConflictException;
@@ -26,10 +30,16 @@ import com.sgkrashi.media.repository.MediaAssetRepository;
 import com.sgkrashi.notification.event.BookingCancelledEvent;
 import com.sgkrashi.notification.event.BookingConfirmedEvent;
 import com.sgkrashi.notification.event.PaymentFailedEvent;
+import com.sgkrashi.notification.event.RefundProcessedEvent;
+import com.sgkrashi.payment.entity.Payment;
+import com.sgkrashi.payment.entity.PaymentStatus;
+import com.sgkrashi.payment.repository.PaymentRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -110,6 +120,7 @@ public class BookingServiceImpl implements BookingService {
     private static final List<BookingStatus> BLOCKING_STATUSES = List.of(BookingStatus.PENDING_PAYMENT, BookingStatus.CONFIRMED);
     private static final String EQUIPMENT_OWNER_TYPE = "EQUIPMENT";
     private static final String STAY_OWNER_TYPE = "STAY";
+    private static final String PAYABLE_TYPE_BOOKING = "BOOKING";
     /** Explicit IST anchor for cancellation cutoffs, regardless of server locale/timezone. */
     private static final ZoneId BOOKING_ZONE = ZoneId.of("Asia/Kolkata");
 
@@ -121,6 +132,8 @@ public class BookingServiceImpl implements BookingService {
     private final EquipmentRepository equipmentRepository;
     private final StayListingRepository stayListingRepository;
     private final MediaAssetRepository mediaAssetRepository;
+    private final UserRepository userRepository;
+    private final PaymentRepository paymentRepository;
     private final CurrentUserProvider currentUserProvider;
     private final BookingMapper bookingMapper;
     private final ApplicationEventPublisher eventPublisher;
@@ -131,6 +144,8 @@ public class BookingServiceImpl implements BookingService {
             EquipmentRepository equipmentRepository,
             StayListingRepository stayListingRepository,
             MediaAssetRepository mediaAssetRepository,
+            UserRepository userRepository,
+            PaymentRepository paymentRepository,
             CurrentUserProvider currentUserProvider,
             BookingMapper bookingMapper,
             ApplicationEventPublisher eventPublisher
@@ -140,6 +155,8 @@ public class BookingServiceImpl implements BookingService {
         this.equipmentRepository = equipmentRepository;
         this.stayListingRepository = stayListingRepository;
         this.mediaAssetRepository = mediaAssetRepository;
+        this.userRepository = userRepository;
+        this.paymentRepository = paymentRepository;
         this.currentUserProvider = currentUserProvider;
         this.bookingMapper = bookingMapper;
         this.eventPublisher = eventPublisher;
@@ -289,6 +306,152 @@ public class BookingServiceImpl implements BookingService {
         booking.setCancellationReason("Payment failed");
         bookingRepository.save(booking);
         eventPublisher.publishEvent(new PaymentFailedEvent("BOOKING", booking.getId(), booking.getUserId()));
+    }
+
+    /**
+     * Called only from {@code RefundServiceImpl}, already guarded against
+     * calling this twice for the same refund. Leaves {@code cancelledAt}/
+     * {@code cancellationReason} untouched if the booking was already
+     * CANCELLED for an unrelated reason — see this method's Javadoc on
+     * {@code BookingService}.
+     */
+    @Override
+    @Transactional
+    public void markRefunded(Long bookingId) {
+        Booking booking = getBookingEntityOrThrow(bookingId);
+        boolean wasAlreadyCancelled = booking.getStatus() == BookingStatus.CANCELLED;
+        if (!wasAlreadyCancelled) {
+            booking.setStatus(BookingStatus.CANCELLED);
+            booking.setCancelledAt(Instant.now());
+            booking.setCancellationReason("Refunded by admin");
+            bookingRepository.save(booking);
+        }
+        eventPublisher.publishEvent(new RefundProcessedEvent(PAYABLE_TYPE_BOOKING, booking.getId(), booking.getUserId(), booking.getTotalPrice()));
+    }
+
+    @Override
+    public PaginatedResponse<AdminBookingResponse> listBookingsForAdmin(
+            BookingStatus status, Long userId, Instant dateFrom, Instant dateTo, int page, int size
+    ) {
+        Specification<Booking> spec = Specification.allOf(
+                BookingSpecifications.hasStatus(status),
+                BookingSpecifications.hasUserId(userId),
+                BookingSpecifications.createdAfter(dateFrom),
+                BookingSpecifications.createdBefore(dateTo));
+
+        Page<Booking> bookingsPage = bookingRepository.findAll(spec,
+                PageRequest.of(Math.max(page, 0), size > 0 ? size : 20, Sort.by("createdAt").descending()));
+        List<Booking> bookings = bookingsPage.getContent();
+
+        List<Long> userIds = bookings.stream().map(Booking::getUserId).distinct().toList();
+        Map<Long, User> usersById = userRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(User::getId, u -> u));
+
+        List<Long> bookingIds = bookings.stream().map(Booking::getId).toList();
+        Map<Long, Payment> paymentsByBookingId = paymentRepository.findByPayableTypeAndPayableIdIn(PAYABLE_TYPE_BOOKING, bookingIds).stream()
+                .collect(Collectors.toMap(Payment::getPayableId, p -> p));
+
+        List<AdminBookingResponse> items = buildAdminResponses(bookings, usersById, paymentsByBookingId);
+        return PaginatedResponse.of(items, bookingsPage);
+    }
+
+    @Override
+    public AdminBookingResponse getBookingDetailForAdmin(Long bookingId) {
+        Booking booking = getBookingEntityOrThrow(bookingId);
+        User user = userRepository.findById(booking.getUserId()).orElse(null);
+        Payment payment = paymentRepository.findByPayableTypeAndPayableId(PAYABLE_TYPE_BOOKING, bookingId).orElse(null);
+        boolean refunded = payment != null && payment.getStatus() == PaymentStatus.REFUNDED;
+
+        BookableItem item = resolveBookableItem(booking.getBookableType(), booking.getBookableId());
+        return bookingMapper.toAdminResponse(
+                booking, item.name(), item.thumbnailUrl(),
+                user != null ? user.getName() : "Unknown",
+                user != null ? user.getEmail() : null,
+                refunded, payment != null ? payment.getRefundedAt() : null);
+    }
+
+    /**
+     * Bypasses {@code isCancellable}'s free-cancellation-window check entirely
+     * — this is an admin override, not the customer self-service path (see
+     * {@link #cancelBooking}). CANCELLED and COMPLETED are terminal: once
+     * reached, no further admin status change is accepted (only notes).
+     */
+    @Override
+    @Transactional
+    public AdminBookingResponse updateBookingStatus(Long bookingId, BookingStatus newStatus, String adminNotes) {
+        Booking booking = getBookingEntityOrThrow(bookingId);
+        boolean isTerminal = booking.getStatus() == BookingStatus.CANCELLED || booking.getStatus() == BookingStatus.COMPLETED;
+        if (isTerminal && newStatus != booking.getStatus()) {
+            throw new BusinessRuleException("This booking's status is final and cannot be changed");
+        }
+
+        booking.setAdminNotes(adminNotes);
+        if (newStatus != booking.getStatus()) {
+            booking.setStatus(newStatus);
+            if (newStatus == BookingStatus.CANCELLED) {
+                booking.setCancelledAt(Instant.now());
+                booking.setCancellationReason("Cancelled by admin");
+            }
+        }
+        Booking saved = bookingRepository.save(booking);
+        BookableItem item = resolveBookableItem(saved.getBookableType(), saved.getBookableId());
+        User user = userRepository.findById(saved.getUserId()).orElse(null);
+        Payment payment = paymentRepository.findByPayableTypeAndPayableId(PAYABLE_TYPE_BOOKING, bookingId).orElse(null);
+        boolean refunded = payment != null && payment.getStatus() == PaymentStatus.REFUNDED;
+        return bookingMapper.toAdminResponse(
+                saved, item.name(), item.thumbnailUrl(),
+                user != null ? user.getName() : "Unknown",
+                user != null ? user.getEmail() : null,
+                refunded, payment != null ? payment.getRefundedAt() : null);
+    }
+
+    private List<AdminBookingResponse> buildAdminResponses(List<Booking> bookings, Map<Long, User> usersById, Map<Long, Payment> paymentsByBookingId) {
+        List<Long> equipmentIds = bookings.stream()
+                .filter(booking -> booking.getBookableType() == BookableType.EQUIPMENT)
+                .map(Booking::getBookableId)
+                .distinct()
+                .toList();
+        List<Long> stayIds = bookings.stream()
+                .filter(booking -> booking.getBookableType() == BookableType.STAY)
+                .map(Booking::getBookableId)
+                .distinct()
+                .toList();
+
+        Map<Long, Equipment> equipmentById = equipmentRepository.findAllById(equipmentIds).stream()
+                .collect(Collectors.toMap(Equipment::getId, equipment -> equipment));
+        Map<Long, StayListing> stayById = stayListingRepository.findAllById(stayIds).stream()
+                .collect(Collectors.toMap(StayListing::getId, stay -> stay));
+
+        Map<Long, String> thumbnailsByEquipmentId = mediaAssetRepository
+                .findByOwnerTypeAndOwnerIdInOrderBySortOrderAsc(EQUIPMENT_OWNER_TYPE, equipmentIds).stream()
+                .collect(Collectors.toMap(MediaAsset::getOwnerId, MediaAsset::getUrl, (first, second) -> first, HashMap::new));
+        Map<Long, String> thumbnailsByStayId = mediaAssetRepository
+                .findByOwnerTypeAndOwnerIdInOrderBySortOrderAsc(STAY_OWNER_TYPE, stayIds).stream()
+                .collect(Collectors.toMap(MediaAsset::getOwnerId, MediaAsset::getUrl, (first, second) -> first, HashMap::new));
+
+        return bookings.stream()
+                .map(booking -> {
+                    String name;
+                    String thumbnailUrl;
+                    if (booking.getBookableType() == BookableType.EQUIPMENT) {
+                        Equipment equipment = equipmentById.get(booking.getBookableId());
+                        name = equipment != null ? equipment.getName() : "Unknown item";
+                        thumbnailUrl = thumbnailsByEquipmentId.get(booking.getBookableId());
+                    } else {
+                        StayListing stay = stayById.get(booking.getBookableId());
+                        name = stay != null ? stay.getName() : "Unknown item";
+                        thumbnailUrl = thumbnailsByStayId.get(booking.getBookableId());
+                    }
+                    User user = usersById.get(booking.getUserId());
+                    Payment payment = paymentsByBookingId.get(booking.getId());
+                    boolean refunded = payment != null && payment.getStatus() == PaymentStatus.REFUNDED;
+                    return bookingMapper.toAdminResponse(
+                            booking, name, thumbnailUrl,
+                            user != null ? user.getName() : "Unknown",
+                            user != null ? user.getEmail() : null,
+                            refunded, payment != null ? payment.getRefundedAt() : null);
+                })
+                .toList();
     }
 
     private boolean isCancellable(Booking booking) {

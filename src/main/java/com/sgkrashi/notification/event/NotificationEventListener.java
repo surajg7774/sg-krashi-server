@@ -76,6 +76,18 @@ public class NotificationEventListener {
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onRefundProcessed(RefundProcessedEvent event) {
+        boolean isOrder = ORDER_PAYABLE_TYPE.equals(event.payableType());
+        notificationService.notify(
+                event.userId(),
+                NotificationType.REFUND_PROCESSED,
+                "Refund Processed",
+                "Your refund of Rs. " + event.amount() + " for your " + (isOrder ? "order" : "booking") + " has been processed.",
+                isOrder ? NotificationRelatedType.ORDER : NotificationRelatedType.BOOKING,
+                event.payableId());
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onInquiryStatusChanged(InquiryStatusChangedEvent event) {
         // Guest-submitted inquiries have no userId — no User to notify
         // in-app, consistent with Module 10's precedent that guest inquiries

@@ -8,6 +8,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 
 /**
  * Generic payment record keyed by {@code payableType}/{@code payableId} rather
@@ -40,6 +41,13 @@ public class Payment extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
     private PaymentStatus status;
+
+    /** Razorpay's refund id (Module 16) — set only once {@link #status} reaches {@link PaymentStatus#REFUNDED}. */
+    @Column(name = "refund_id", length = 100)
+    private String refundId;
+
+    @Column(name = "refunded_at")
+    private Instant refundedAt;
 
     public String getPayableType() {
         return payableType;
@@ -95,5 +103,21 @@ public class Payment extends BaseEntity {
 
     public void setStatus(PaymentStatus status) {
         this.status = status;
+    }
+
+    public String getRefundId() {
+        return refundId;
+    }
+
+    public void setRefundId(String refundId) {
+        this.refundId = refundId;
+    }
+
+    public Instant getRefundedAt() {
+        return refundedAt;
+    }
+
+    public void setRefundedAt(Instant refundedAt) {
+        this.refundedAt = refundedAt;
     }
 }

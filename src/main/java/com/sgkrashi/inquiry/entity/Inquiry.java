@@ -53,6 +53,10 @@ public class Inquiry extends BaseEntity {
     @Column(name = "status", nullable = false, length = 30)
     private InquiryStatus status;
 
+    /** Internal, Admin-only free text (Module 16) — never shown to the inquirer. */
+    @Column(name = "admin_notes", columnDefinition = "TEXT")
+    private String adminNotes;
+
     public Long getUserId() {
         return userId;
     }
@@ -123,5 +127,13 @@ public class Inquiry extends BaseEntity {
 
     public void setStatus(InquiryStatus status) {
         this.status = status;
+    }
+
+    public String getAdminNotes() {
+        return adminNotes;
+    }
+
+    public void setAdminNotes(String adminNotes) {
+        this.adminNotes = adminNotes;
     }
 }

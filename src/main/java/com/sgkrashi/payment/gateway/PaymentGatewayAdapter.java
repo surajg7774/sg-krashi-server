@@ -19,4 +19,14 @@ public interface PaymentGatewayAdapter {
 
     /** The publishable key ID the frontend needs to open the gateway's checkout widget. */
     String getPublicKeyId();
+
+    /**
+     * Issues a full refund against an already-captured payment. {@code amount}
+     * is the same rupee amount originally captured — this module only supports
+     * full refunds, never partial. Throws if the gateway rejects the refund
+     * (e.g. already refunded on Razorpay's side, invalid payment id); callers
+     * must check {@code Payment}'s own refund status BEFORE calling this, since
+     * this call itself is not the idempotency guard — see {@code RefundService}.
+     */
+    GatewayRefundResult refund(String gatewayPaymentId, BigDecimal amount);
 }
