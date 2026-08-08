@@ -1,0 +1,62 @@
+# Production profile — activated via SPRING_PROFILES_ACTIVE=prod.
+#
+# Every value below reads from an environment variable with NO fallback
+# default, on purpose: this is the same "fail loudly, not silently" pattern
+# application.yml's base DB_PASSWORD has always used (see its own comment).
+# A missing required env var makes the app refuse to start with a clear
+# "Could not resolve placeholder" error, instead of silently booting with an
+# empty secret or writing uploads to ephemeral local disk. The one deliberate
+# exception is S3_ENDPOINT, which is genuinely optional (blank = real AWS
+# S3, per S3StorageProvider's own Javadoc) — not an oversight.
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  mail:
+    host: ${MAIL_HOST}
+    port: ${MAIL_PORT}
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+app:
+  cors:
+    # Comma-separated (e.g. a Vercel preview URL + the final production
+    # domain) — CorsProperties already binds this to a List<String>, Spring's
+    # relaxed binding turns a comma-separated env var into a list for free.
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
+  jwt:
+    secret: ${JWT_SECRET}
+  razorpay:
+    key-id: ${RAZORPAY_KEY_ID}
+    key-secret: ${RAZORPAY_KEY_SECRET}
+    webhook-secret: ${RAZORPAY_WEBHOOK_SECRET}
+
+storage:
+  # local or s3 — deliberately no default here either: silently falling back
+  # to local-disk storage in production (files gone on next redeploy) is
+  # exactly the kind of silent failure this profile exists to prevent.
+  provider: ${STORAGE_PROVIDER}
+  s3:
+    bucket-name: ${S3_BUCKET_NAME}
+    region: ${S3_REGION}
+    access-key: ${S3_ACCESS_KEY}
+    secret-key: ${S3_SECRET_KEY}
+    endpoint: ${S3_ENDPOINT:}
+    public-url-base: ${S3_PUBLIC_URL_BASE}
+
+server:
+  # Most PaaS hosts (Railway, Render, etc.) terminate HTTPS at their edge and
+  # forward plain HTTP internally. Without this, the app can't tell the
+  # original request was HTTPS — which matters here specifically because the
+  # refresh-token cookie is Secure(true) (Module 2) and Spring Security's
+  # redirect/URL-building logic also assumes the scheme it sees is the real
+  # one. "framework" delegates to Spring's own ForwardedHeaderFilter, reading
+  # the standard X-Forwarded-Proto/X-Forwarded-Host headers.
+  forward-headers-strategy: framework

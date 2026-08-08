@@ -1,6 +1,7 @@
 package com.sgkrashi.media.storage;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -15,8 +16,15 @@ import java.util.UUID;
  * via the {@code /uploads/**} static resource mapping in {@code WebConfig}. Not
  * suitable for production (files don't survive a redeploy and don't scale across
  * multiple app instances) — see {@link StorageProvider} for how this gets swapped.
+ *
+ * <p>Active whenever {@code storage.provider} is unset or {@code local} — the
+ * default, so existing local dev setups need zero config changes. Set
+ * {@code STORAGE_PROVIDER=s3} to switch to {@link S3StorageProvider} instead;
+ * the two are mutually exclusive by construction (Spring would fail to start
+ * with two {@code StorageProvider} beans otherwise), not by convention.
  */
 @Component
+@ConditionalOnProperty(prefix = "storage", name = "provider", havingValue = "local", matchIfMissing = true)
 public class LocalStorageProvider implements StorageProvider {
 
     private static final String URL_PREFIX = "/uploads/";

@@ -23,6 +23,7 @@
         <springdoc.version>2.8.6</springdoc.version>
         <jjwt.version>0.12.6</jjwt.version>
         <razorpay.version>1.4.7</razorpay.version>
+        <aws-sdk.version>2.29.52</aws-sdk.version>
     </properties>
 
     <dependencies>
@@ -90,6 +91,18 @@
             <groupId>com.razorpay</groupId>
             <artifactId>razorpay-java</artifactId>
             <version>${razorpay.version}</version>
+        </dependency>
+
+        <!-- S3-compatible object storage for S3StorageProvider (Task 1) — the
+             plain client, not the Spring Cloud AWS starter, since only
+             put/delete + a configurable endpoint override are needed. Works
+             against real AWS S3 or any S3-compatible provider (DigitalOcean
+             Spaces, Backblaze B2, Cloudinary's S3 endpoint, MinIO, ...) via
+             S3_ENDPOINT. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>${aws-sdk.version}</version>
         </dependency>
 
         <dependency>
