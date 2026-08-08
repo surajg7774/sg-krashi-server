@@ -16,7 +16,16 @@ FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
 RUN addgroup -S app && adduser -S app -G app
-COPY --from=build /app/target/*.jar app.jar
+COPY --from=build --chown=app:app /app/target/*.jar app.jar
+
+# COPY/RUN above run as root (the default, before USER switches it), so
+# /app itself is root-owned unless explicitly handed over — the non-root
+# `app` user then has no permission to create anything under it, including
+# LocalStorageProvider's default ./uploads directory (STORAGE_PROVIDER=local)
+# at runtime. Pre-creating it and chown'ing the whole tree here fixes that
+# at the source, rather than special-casing just this one directory.
+RUN mkdir -p /app/uploads && chown -R app:app /app
+
 USER app
 
 EXPOSE 8080
