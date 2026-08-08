@@ -24,6 +24,7 @@
         <jjwt.version>0.12.6</jjwt.version>
         <razorpay.version>1.4.7</razorpay.version>
         <aws-sdk.version>2.29.52</aws-sdk.version>
+        <openpdf.version>2.0.3</openpdf.version>
     </properties>
 
     <dependencies>
@@ -103,6 +104,30 @@
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>
             <version>${aws-sdk.version}</version>
+        </dependency>
+
+        <!-- AI Crop Doctor (Task: com.sgkrashi.cropdoctor) — WebClient is the HTTP
+             boundary to the Python AI service. Only spring-webflux + a client-side
+             HTTP connector are added, not the full spring-boot-starter-webflux:
+             this app stays a servlet (spring-boot-starter-web) application, it just
+             also needs WebClient as an outbound HTTP client, the same
+             minimal-dependency reasoning as the plain S3 client above. -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-webflux</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.projectreactor.netty</groupId>
+            <artifactId>reactor-netty-http</artifactId>
+        </dependency>
+
+        <!-- AI Crop Doctor PDF scan reports (Section 5.6) — no existing PDF
+             generation anywhere in this project. OpenPDF (Apache-2.0/LGPL fork of
+             iText 4) chosen over iText itself, which is AGPL. -->
+        <dependency>
+            <groupId>com.github.librepdf</groupId>
+            <artifactId>openpdf</artifactId>
+            <version>${openpdf.version}</version>
         </dependency>
 
         <dependency>

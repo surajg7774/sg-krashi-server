@@ -1,6 +1,7 @@
 package com.sgkrashi.common.exception;
 
 import com.sgkrashi.common.dto.ApiErrorResponse;
+import com.sgkrashi.cropdoctor.exception.AiServiceUnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -65,6 +66,13 @@ public class GlobalExceptionHandler {
         log.warn("Rate limit exceeded: {}", ex.getMessage());
         ApiErrorResponse body = ApiErrorResponse.of("RATE_LIMIT_EXCEEDED", ex.getMessage(), List.of());
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(body);
+    }
+
+    @ExceptionHandler(AiServiceUnavailableException.class)
+    public ResponseEntity<ApiErrorResponse> handleAiServiceUnavailable(AiServiceUnavailableException ex) {
+        log.warn("AI Crop Doctor service call failed: {}", ex.getMessage());
+        ApiErrorResponse body = ApiErrorResponse.of("AI_SERVICE_UNAVAILABLE", ex.getMessage(), List.of());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
     }
 
     @ExceptionHandler(InvalidTokenException.class)

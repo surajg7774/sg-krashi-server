@@ -48,6 +48,12 @@ app:
     webhook-secret: ${RAZORPAY_WEBHOOK_SECRET}
   mail:
     from-address: ${MAIL_FROM:no-reply@sgkrashi.com}
+  ai-crop-doctor:
+    # Points at the local sg-krashi-ai-service dev server (see its README).
+    # The key has no default, same as JWT_SECRET/RAZORPAY_* above — set it
+    # via application-local.yml.
+    service-url: ${AI_SERVICE_URL:http://localhost:8000}
+    api-key: ${AI_SERVICE_API_KEY}
 
 springdoc:
   swagger-ui:

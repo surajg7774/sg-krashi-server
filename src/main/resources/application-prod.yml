@@ -37,6 +37,13 @@ app:
     key-id: ${RAZORPAY_KEY_ID}
     key-secret: ${RAZORPAY_KEY_SECRET}
     webhook-secret: ${RAZORPAY_WEBHOOK_SECRET}
+  ai-crop-doctor:
+    # sg-krashi-ai-service's Railway-internal URL (e.g.
+    # http://sg-krashi-ai-service.railway.internal:8000) — that service has no
+    # public domain, only reachable over Railway's private network. See
+    # sg-krashi-ai-service/README.md "Deploying on Railway".
+    service-url: ${AI_SERVICE_URL}
+    api-key: ${AI_SERVICE_API_KEY}
 
 storage:
   # local or s3 — deliberately no default here either: silently falling back
