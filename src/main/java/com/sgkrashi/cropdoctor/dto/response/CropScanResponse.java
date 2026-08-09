@@ -5,6 +5,7 @@ import java.time.Instant;
 
 public record CropScanResponse(
         Long id,
+        String declaredCrop,
         String imageUrl,
         String cropName,
         String diseaseName,
@@ -13,6 +14,7 @@ public record CropScanResponse(
         String recommendation,
         String modelVersion,
         boolean isUncertain,
+        boolean cropMismatch,
         Instant createdAt
 ) {
 }

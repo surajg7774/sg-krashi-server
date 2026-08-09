@@ -5,6 +5,7 @@ import com.sgkrashi.common.dto.PaginatedResponse;
 import com.sgkrashi.cropdoctor.dto.response.CropScanReport;
 import com.sgkrashi.cropdoctor.dto.response.CropScanResponse;
 import com.sgkrashi.cropdoctor.dto.response.CropScanSummaryResponse;
+import com.sgkrashi.cropdoctor.dto.response.SupportedCropResponse;
 import com.sgkrashi.cropdoctor.service.CropDoctorService;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -20,6 +21,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/v1/ai/crop-doctor")
 public class CropDoctorController {
@@ -31,9 +34,17 @@ public class CropDoctorController {
     }
 
     @PostMapping(value = "/analyze", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ApiResponse<CropScanResponse>> analyze(@RequestParam("file") MultipartFile file) {
-        CropScanResponse response = cropDoctorService.analyze(file);
+    public ResponseEntity<ApiResponse<CropScanResponse>> analyze(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam("declaredCrop") String declaredCrop
+    ) {
+        CropScanResponse response = cropDoctorService.analyze(file, declaredCrop);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response, "Scan complete"));
+    }
+
+    @GetMapping("/supported-crops")
+    public ResponseEntity<ApiResponse<List<SupportedCropResponse>>> getSupportedCrops() {
+        return ResponseEntity.ok(ApiResponse.success(cropDoctorService.getSupportedCrops(), "Supported crops retrieved"));
     }
 
     @GetMapping("/scans")

@@ -10,6 +10,7 @@ public record CropScanSummaryResponse(
         String diseaseName,
         BigDecimal confidenceScore,
         boolean isUncertain,
+        boolean cropMismatch,
         Instant createdAt
 ) {
 }

@@ -10,6 +10,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.DisabledException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
@@ -131,6 +132,22 @@ public class GlobalExceptionHandler {
                 .toList();
         log.warn("Request validation failed: {}", details);
         ApiErrorResponse body = ApiErrorResponse.of("VALIDATION_ERROR", "Request validation failed", details);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    /**
+     * A required {@code @RequestParam} missing from the request (e.g.
+     * {@code declaredCrop} on the crop-doctor analyze endpoint) throws this
+     * before any controller/service code runs — previously uncaught here,
+     * so it fell through to the generic 500 below instead of a clean 400.
+     * General fix, not scoped to one endpoint: any required request param
+     * across the app benefits from this.
+     */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiErrorResponse> handleMissingParameter(MissingServletRequestParameterException ex) {
+        log.warn("Missing required request parameter: {}", ex.getParameterName());
+        ApiErrorResponse body = ApiErrorResponse.of(
+                "VALIDATION_ERROR", "Missing required parameter: " + ex.getParameterName(), List.of());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 

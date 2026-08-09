@@ -9,6 +9,7 @@ import com.sgkrashi.cropdoctor.dto.response.AiPredictionResponse;
 import com.sgkrashi.cropdoctor.dto.response.CropScanReport;
 import com.sgkrashi.cropdoctor.dto.response.CropScanResponse;
 import com.sgkrashi.cropdoctor.dto.response.CropScanSummaryResponse;
+import com.sgkrashi.cropdoctor.dto.response.SupportedCropResponse;
 import com.sgkrashi.cropdoctor.entity.CropScan;
 import com.sgkrashi.cropdoctor.mapper.CropScanMapper;
 import com.sgkrashi.cropdoctor.ratelimit.AiCropDoctorRateLimiter;
@@ -17,6 +18,7 @@ import com.sgkrashi.cropdoctor.service.AiServiceClient;
 import com.sgkrashi.cropdoctor.service.CropDoctorService;
 import com.sgkrashi.cropdoctor.service.CropScanReportService;
 import com.sgkrashi.cropdoctor.service.RecommendationTextProvider;
+import com.sgkrashi.cropdoctor.service.SupportedCropsProvider;
 import com.sgkrashi.media.storage.StorageProvider;
 import com.sgkrashi.media.validation.ImageContentTypeDetector;
 import org.springframework.data.domain.Page;
@@ -55,6 +57,7 @@ public class CropDoctorServiceImpl implements CropDoctorService {
     private final CropScanReportService cropScanReportService;
     private final CurrentUserProvider currentUserProvider;
     private final AiCropDoctorRateLimiter rateLimiter;
+    private final SupportedCropsProvider supportedCropsProvider;
 
     public CropDoctorServiceImpl(
             StorageProvider storageProvider,
@@ -64,7 +67,8 @@ public class CropDoctorServiceImpl implements CropDoctorService {
             RecommendationTextProvider recommendationTextProvider,
             CropScanReportService cropScanReportService,
             CurrentUserProvider currentUserProvider,
-            AiCropDoctorRateLimiter rateLimiter
+            AiCropDoctorRateLimiter rateLimiter,
+            SupportedCropsProvider supportedCropsProvider
     ) {
         this.storageProvider = storageProvider;
         this.aiServiceClient = aiServiceClient;
@@ -74,11 +78,12 @@ public class CropDoctorServiceImpl implements CropDoctorService {
         this.cropScanReportService = cropScanReportService;
         this.currentUserProvider = currentUserProvider;
         this.rateLimiter = rateLimiter;
+        this.supportedCropsProvider = supportedCropsProvider;
     }
 
     @Override
     @Transactional
-    public CropScanResponse analyze(MultipartFile file) {
+    public CropScanResponse analyze(MultipartFile file, String declaredCrop) {
         Long userId = currentUserProvider.getCurrentUserId();
 
         if (!rateLimiter.tryConsume(String.valueOf(userId))) {
@@ -87,17 +92,27 @@ public class CropDoctorServiceImpl implements CropDoctorService {
         }
 
         validate(file);
+        // Required, not optional: the whole point of this check is to catch
+        // exactly the failure mode confidence alone missed (a confirmed
+        // production case — 99.71% confidence, wrong crop AND wrong health
+        // status). An optional field would let users skip the safety net.
+        String normalizedDeclaredCrop = validateDeclaredCrop(declaredCrop);
 
         String imageUrl = storageProvider.store(file);
         AiPredictionResponse prediction = aiServiceClient.predict(file);
 
         boolean isUncertain = prediction.confidenceScore().compareTo(UNCERTAINTY_THRESHOLD) < 0;
         boolean isHealthy = HEALTHY_LABEL.equals(prediction.diseaseName());
+        // Independent of confidence/uncertainty on purpose — a mismatch is a
+        // mismatch even at 99.71% confidence, which is exactly what the
+        // confirmed production case proved confidence alone can't catch.
+        boolean cropMismatch = !normalizedDeclaredCrop.equalsIgnoreCase(prediction.cropName());
         String recommendation = recommendationTextProvider.recommendationFor(prediction.classLabel(), isHealthy);
         recommendation = recommendationTextProvider.applyUncertaintyCaveat(recommendation, isUncertain);
 
         CropScan scan = new CropScan();
         scan.setUserId(userId);
+        scan.setDeclaredCrop(normalizedDeclaredCrop);
         scan.setImageUrl(imageUrl);
         scan.setCropName(prediction.cropName());
         scan.setDiseaseName(prediction.diseaseName());
@@ -106,9 +121,25 @@ public class CropDoctorServiceImpl implements CropDoctorService {
         scan.setRecommendation(recommendation);
         scan.setModelVersion(prediction.modelVersion());
         scan.setUncertain(isUncertain);
+        scan.setCropMismatch(cropMismatch);
 
         CropScan saved = cropScanRepository.save(scan);
         return cropScanMapper.toResponse(saved);
+    }
+
+    @Override
+    public List<SupportedCropResponse> getSupportedCrops() {
+        return supportedCropsProvider.getSupportedCrops();
+    }
+
+    private String validateDeclaredCrop(String declaredCrop) {
+        if (declaredCrop == null || declaredCrop.isBlank()) {
+            throw new ValidationException("Please select which crop you're photographing");
+        }
+        if (!supportedCropsProvider.isKnownCrop(declaredCrop)) {
+            throw new ValidationException("Unrecognized crop: " + declaredCrop);
+        }
+        return SupportedCropsProvider.normalize(declaredCrop);
     }
 
     @Override

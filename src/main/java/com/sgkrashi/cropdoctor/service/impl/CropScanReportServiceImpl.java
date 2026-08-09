@@ -63,6 +63,7 @@ public class CropScanReportServiceImpl implements CropScanReportService {
             Font headingFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 11);
             Font bodyFont = FontFactory.getFont(FontFactory.HELVETICA, 11);
             Font uncertainFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 11, Font.NORMAL, new Color(0xB4, 0x53, 0x09));
+            Font mismatchFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 11, Font.NORMAL, new Color(0xC6, 0x28, 0x28));
             Font mutedFont = FontFactory.getFont(FontFactory.HELVETICA_OBLIQUE, 9, Font.ITALIC, Color.GRAY);
 
             document.add(new Paragraph("SG Krashi — AI Crop Doctor Report", titleFont));
@@ -71,7 +72,10 @@ public class CropScanReportServiceImpl implements CropScanReportService {
             addImage(document, scan.getImageUrl(), mutedFont);
             document.add(Chunk.NEWLINE);
 
-            addField(document, headingFont, bodyFont, "Crop", scan.getCropName());
+            if (scan.getDeclaredCrop() != null) {
+                addField(document, headingFont, bodyFont, "Declared crop (by user)", scan.getDeclaredCrop());
+            }
+            addField(document, headingFont, bodyFont, "Crop (AI-detected)", scan.getCropName());
             addField(document, headingFont, bodyFont, "Result", scan.getDiseaseName());
             addField(document, headingFont, bodyFont, "Confidence", formatConfidence(scan.getConfidenceScore()));
             if (scan.getSeverity() != null) {
@@ -80,6 +84,18 @@ public class CropScanReportServiceImpl implements CropScanReportService {
             addField(document, headingFont, bodyFont, "Scan date", DATE_FORMAT.format(scan.getCreatedAt()) + " UTC");
             addField(document, headingFont, bodyFont, "Model version", scan.getModelVersion());
             document.add(Chunk.NEWLINE);
+
+            // Independent banners — a scan can be mismatched, uncertain, both,
+            // or neither; never conflated into one flag (see
+            // CropDoctorServiceImpl).
+            if (scan.isCropMismatch()) {
+                document.add(new Paragraph(
+                        "CROP MISMATCH — you selected \"" + scan.getDeclaredCrop() + "\", but the AI detected "
+                                + "this photo as \"" + scan.getCropName() + "\". This result may not apply to "
+                                + "your actual crop at all.",
+                        mismatchFont));
+                document.add(Chunk.NEWLINE);
+            }
 
             if (scan.isUncertain()) {
                 document.add(new Paragraph(

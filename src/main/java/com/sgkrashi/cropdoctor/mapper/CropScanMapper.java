@@ -11,6 +11,7 @@ public class CropScanMapper {
     public CropScanResponse toResponse(CropScan scan) {
         return new CropScanResponse(
                 scan.getId(),
+                scan.getDeclaredCrop(),
                 scan.getImageUrl(),
                 scan.getCropName(),
                 scan.getDiseaseName(),
@@ -19,6 +20,7 @@ public class CropScanMapper {
                 scan.getRecommendation(),
                 scan.getModelVersion(),
                 scan.isUncertain(),
+                scan.isCropMismatch(),
                 scan.getCreatedAt()
         );
     }
@@ -31,6 +33,7 @@ public class CropScanMapper {
                 scan.getDiseaseName(),
                 scan.getConfidenceScore(),
                 scan.isUncertain(),
+                scan.isCropMismatch(),
                 scan.getCreatedAt()
         );
     }
