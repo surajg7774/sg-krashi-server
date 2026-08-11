@@ -49,7 +49,10 @@ public class CropScan extends BaseEntity {
     @Column(name = "crop_name", nullable = false, length = 100)
     private String cropName;
 
-    @Column(name = "disease_name", length = 150)
+    // TEXT, not a bounded VARCHAR (see V24__crop_scan_disease_name_text.sql) —
+    // Gemini's problem descriptions vary widely in length with no principled
+    // cap to guess.
+    @Column(name = "disease_name", columnDefinition = "TEXT")
     private String diseaseName;
 
     // Real calibrated probability from the old classifier only — never
