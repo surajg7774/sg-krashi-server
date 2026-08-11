@@ -23,8 +23,20 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
+import javax.imageio.IIOImage;
+import javax.imageio.ImageIO;
+import javax.imageio.ImageWriteParam;
+import javax.imageio.ImageWriter;
+import javax.imageio.stream.ImageOutputStream;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -43,6 +55,11 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
     private static final Logger log = LoggerFactory.getLogger(GeminiAnalysisProvider.class);
     private static final Duration TIMEOUT = Duration.ofSeconds(45);
     private static final String PROVIDER_NAME = "gemini";
+    // Plenty for disease/pest detection on a leaf photo — meaningfully cuts
+    // upload size and Gemini processing time for a full-resolution phone
+    // photo (often 3000px+ on the long side) without losing diagnostic detail.
+    private static final int MAX_DIMENSION_PX = 1536;
+    private static final float JPEG_QUALITY = 0.85f;
 
     private static final Map<String, String> LANGUAGE_NAMES = Map.of(
             "en", "English",
@@ -117,9 +134,10 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
 
         for (MultipartFile image : images) {
             ObjectNode inlineData = objectMapper.createObjectNode();
-            inlineData.put("mime_type", image.getContentType());
             try {
-                inlineData.put("data", java.util.Base64.getEncoder().encodeToString(image.getBytes()));
+                ResizedImage resized = resizeForAnalysis(image);
+                inlineData.put("mime_type", resized.mimeType());
+                inlineData.put("data", Base64.getEncoder().encodeToString(resized.bytes()));
             } catch (IOException ex) {
                 throw new AiServiceUnavailableException("Could not read uploaded image for analysis", ex);
             }
@@ -139,6 +157,65 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
         payload.set("contents", objectMapper.createArrayNode().add(content));
         payload.set("generationConfig", generationConfig);
         return payload;
+    }
+
+    /**
+     * Downscales/re-encodes only the copy sent to Gemini — never touches what
+     * {@code CropDoctorServiceImpl} stores separately for an authenticated
+     * user's history. A full-resolution phone photo (often several MB,
+     * 3000px+ on the long side) adds real upload/processing latency for no
+     * disease-detection benefit past {@link #MAX_DIMENSION_PX}; images
+     * already at or under that size are sent unchanged to avoid a pointless
+     * re-encode.
+     */
+    private ResizedImage resizeForAnalysis(MultipartFile image) throws IOException {
+        byte[] originalBytes = image.getBytes();
+        BufferedImage source;
+        try (ByteArrayInputStream in = new ByteArrayInputStream(originalBytes)) {
+            source = ImageIO.read(in);
+        }
+        if (source == null || Math.max(source.getWidth(), source.getHeight()) <= MAX_DIMENSION_PX) {
+            // Not a decodable image (let Gemini itself reject it), or already
+            // small enough — pass the original bytes/mime-type through as-is.
+            return new ResizedImage(originalBytes, image.getContentType());
+        }
+
+        double scale = (double) MAX_DIMENSION_PX / Math.max(source.getWidth(), source.getHeight());
+        int scaledWidth = (int) Math.round(source.getWidth() * scale);
+        int scaledHeight = (int) Math.round(source.getHeight() * scale);
+
+        // TYPE_INT_RGB (no alpha) + a white fill under the scaled draw, so a
+        // transparent PNG flattens to white instead of black when re-encoded
+        // as JPEG below.
+        BufferedImage scaled = new BufferedImage(scaledWidth, scaledHeight, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = scaled.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+        g.setColor(Color.WHITE);
+        g.fillRect(0, 0, scaledWidth, scaledHeight);
+        g.drawImage(source, 0, 0, scaledWidth, scaledHeight, null);
+        g.dispose();
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ImageWriter writer = ImageIO.getImageWritersByFormatName("jpg").next();
+        ImageWriteParam writeParam = writer.getDefaultWriteParam();
+        writeParam.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+        writeParam.setCompressionQuality(JPEG_QUALITY);
+        try (ImageOutputStream ios = ImageIO.createImageOutputStream(out)) {
+            writer.setOutput(ios);
+            writer.write(null, new IIOImage(scaled, null, null), writeParam);
+        } finally {
+            writer.dispose();
+        }
+
+        byte[] resizedBytes = out.toByteArray();
+        log.debug("Resized image for Gemini: {}x{} ({} bytes) -> {}x{} ({} bytes)",
+                source.getWidth(), source.getHeight(), originalBytes.length,
+                scaledWidth, scaledHeight, resizedBytes.length);
+        return new ResizedImage(resizedBytes, MediaType.IMAGE_JPEG_VALUE);
+    }
+
+    private record ResizedImage(byte[] bytes, String mimeType) {
     }
 
     private String buildPrompt(String declaredCrop, String languageCode, int imageCount) {
