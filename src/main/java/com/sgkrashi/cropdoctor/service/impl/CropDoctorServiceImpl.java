@@ -42,7 +42,8 @@ public class CropDoctorServiceImpl implements CropDoctorService {
     private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
     private static final int MIN_DIMENSION_PX = 32;
     private static final int MAX_IMAGES = 3;
-    private static final Set<String> SUPPORTED_LANGUAGES = Set.of("en", "hi", "mr", "gu");
+    private static final Set<String> SUPPORTED_LANGUAGES = Set.of("en", "hi", "mr", "gu", "hinglish");
+    private static final int MAX_DECLARED_CROP_LENGTH = 100;
 
     private final StorageProvider storageProvider;
     private final CropAnalysisProvider cropAnalysisProvider;
@@ -78,10 +79,15 @@ public class CropDoctorServiceImpl implements CropDoctorService {
 
     @Override
     @Transactional
-    public CropScanResponse analyze(List<MultipartFile> files, String declaredCrop, String language) {
-        Long userId = currentUserProvider.getCurrentUserId();
+    public CropScanResponse analyze(List<MultipartFile> files, String declaredCrop, String language, String clientIp) {
+        // Guest Access refinement: Guests can analyze, but nothing is
+        // persisted for them — getCurrentUserIdOrNull() (not
+        // getCurrentUserId(), which throws for anonymous requests) is what
+        // makes that distinction available here.
+        Long userId = currentUserProvider.getCurrentUserIdOrNull();
+        String rateLimitKey = userId != null ? "user:" + userId : "ip:" + clientIp;
 
-        if (!rateLimiter.tryConsume(String.valueOf(userId))) {
+        if (!rateLimiter.tryConsume(rateLimitKey)) {
             throw new RateLimitExceededException("Too many scan requests. Please try again in a while.");
         }
 
@@ -93,9 +99,17 @@ public class CropDoctorServiceImpl implements CropDoctorService {
         String normalizedDeclaredCrop = validateDeclaredCrop(declaredCrop);
         String normalizedLanguage = validateLanguage(language);
 
-        List<String> imageUrls = files.stream().map(storageProvider::store).toList();
-
         CropAnalysisResult result = cropAnalysisProvider.analyze(files, normalizedDeclaredCrop, normalizedLanguage);
+
+        if (userId == null) {
+            // Nothing stored, nothing uploaded to StorageProvider — a Guest
+            // result exists only in this response. The frontend renders the
+            // just-selected files' own local previews instead of a
+            // server-hosted image URL.
+            return cropScanMapper.toEphemeralResponse(result, normalizedDeclaredCrop, normalizedLanguage);
+        }
+
+        List<String> imageUrls = files.stream().map(storageProvider::store).toList();
 
         CropScan scan = new CropScan();
         scan.setUserId(userId);
@@ -125,14 +139,26 @@ public class CropDoctorServiceImpl implements CropDoctorService {
         return supportedCropsProvider.getSupportedCrops();
     }
 
+    /**
+     * Known crops (dropdown selections) still get normalized to canonical
+     * casing, same as before. Anything not in the known list is accepted as
+     * free text rather than rejected — this is what makes the frontend's
+     * "Other / Not listed" option work without the backend needing to know
+     * which UI path produced the value; it's just whatever wasn't
+     * recognized.
+     */
     private String validateDeclaredCrop(String declaredCrop) {
         if (declaredCrop == null || declaredCrop.isBlank()) {
-            throw new ValidationException("Please select which crop you're photographing");
+            throw new ValidationException("Please select or enter which crop you're photographing");
         }
-        if (!supportedCropsProvider.isKnownCrop(declaredCrop)) {
-            throw new ValidationException("Unrecognized crop: " + declaredCrop);
+        String trimmed = declaredCrop.trim();
+        if (trimmed.length() > MAX_DECLARED_CROP_LENGTH) {
+            throw new ValidationException("Crop name is too long");
         }
-        return SupportedCropsProvider.normalize(declaredCrop);
+        if (supportedCropsProvider.isKnownCrop(trimmed)) {
+            return SupportedCropsProvider.normalize(trimmed);
+        }
+        return trimmed;
     }
 
     private String validateLanguage(String language) {

@@ -59,7 +59,20 @@ public class SecurityConfig {
             "/api/v1/reviews",
             "/uploads/**",
             "/api/v1/cms/content-blocks",
-            "/api/v1/search"
+            "/api/v1/search",
+            // A Guest needs this to populate the crop dropdown before they can
+            // even attempt an analysis (Guest Access refinement) — the analyze
+            // endpoint itself being public isn't enough on its own.
+            "/api/v1/ai/crop-doctor/supported-crops"
+    };
+
+    // POST-only, scoped by method for the same reason as PUBLIC_GET_ENDPOINTS —
+    // only the analyze action itself is public; /scans, /scans/{id}, DELETE,
+    // and the PDF report stay behind the default anyRequest().authenticated()
+    // rule below, since those are the "save/history/download" actions that
+    // still require login (Guest Access refinement).
+    private static final String[] PUBLIC_POST_ENDPOINTS = {
+            "/api/v1/ai/crop-doctor/analyze"
     };
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -95,6 +108,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.GET, PUBLIC_GET_ENDPOINTS).permitAll()
+                        .requestMatchers(HttpMethod.POST, PUBLIC_POST_ENDPOINTS).permitAll()
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(exceptions -> exceptions

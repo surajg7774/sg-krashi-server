@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -64,6 +65,41 @@ public class CropScanMapper {
                 scan.isUncertain(),
                 scan.isCropMismatch(),
                 scan.getCreatedAt()
+        );
+    }
+
+    /**
+     * A Guest's result — never persisted (Guest Access refinement), so
+     * there's no {@code CropScan} entity to map from. Built directly from
+     * the provider result so the frontend gets the exact same rich shape
+     * either way; {@code id} is null, which the frontend uses to know
+     * "there's nothing here to download or view again."
+     */
+    public CropScanResponse toEphemeralResponse(CropAnalysisResult result, String declaredCrop, String language) {
+        return new CropScanResponse(
+                null,
+                declaredCrop,
+                language,
+                List.of(),
+                result.identifiedCrop(),
+                result.healthStatus().name(),
+                result.problem(),
+                result.pathogenScientificName(),
+                result.confidenceBand().name(),
+                result.severity() == null ? null : result.severity().name(),
+                result.symptoms(),
+                result.possibleCauses(),
+                result.environmentalFactors(),
+                result.actionsNow(),
+                result.prevention(),
+                result.monitoringGuidance(),
+                result.warningSignsToEscalate(),
+                result.limitations(),
+                result.providerName(),
+                result.providerModelVersion(),
+                result.confidenceBand() == ConfidenceBand.LOW,
+                !result.cropMatchesDeclared(),
+                Instant.now()
         );
     }
 

@@ -142,7 +142,6 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
     }
 
     private String buildPrompt(String declaredCrop, String languageCode, int imageCount) {
-        String languageName = LANGUAGE_NAMES.getOrDefault(languageCode, "English");
         String multiImageNote = imageCount > 1
                 ? "You have been given " + imageCount + " photos of the same plant, taken from different "
                 + "angles/distances — use all of them together as evidence for one diagnosis, not separate ones.\n\n"
@@ -155,10 +154,7 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
                 this, set cropMatchesDeclared to false and explain the disagreement in your problem/limitations \
                 text, rather than silently overriding the user's declaration or silently agreeing with it.
 
-                Write your entire response in %s. Naturally, as it would be written for a farmer who speaks that \
-                language — not a machine translation. For any disease or pathogen name, include the scientific/\
-                English name alongside the localized name (in pathogenScientificName) so the farmer can show it \
-                to an agri-dealer or extension officer unambiguously.
+                %s
 
                 Be honest about uncertainty. If the image is not a plant, or you cannot make a reliable diagnosis, \
                 say so clearly via healthStatus=UNCERTAIN and confidenceBand=LOW rather than guessing or inventing \
@@ -168,7 +164,34 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
                 confirm).
 
                 Return your analysis as JSON matching the required schema exactly.""".formatted(
-                multiImageNote, declaredCrop, languageName);
+                multiImageNote, declaredCrop, buildLanguageInstruction(languageCode));
+    }
+
+    /**
+     * Hinglish is a genuinely distinct style, not a shortcut version of
+     * Hindi — it needs its own explicit instruction rather than falling
+     * through to "write in [language name]", or Gemini tends to produce
+     * either formal Hindi transliterated into Roman script or English with
+     * a few Hindi words sprinkled in, neither of which is what was asked for.
+     */
+    private String buildLanguageInstruction(String languageCode) {
+        if ("hinglish".equals(languageCode)) {
+            return """
+                    Write your entire response in natural, colloquial Hinglish — Hindi-English code-mixed \
+                    language written in Roman/English script, exactly the way many Indian farmers and everyday \
+                    users actually text and read (for example: "Yeh disease aapke plant ko damage kar sakti \
+                    hai, isliye turant fungicide spray karein"). This is NOT formal Hindi transliterated into \
+                    Roman script, and NOT English with occasional Hindi words sprinkled in — it should read \
+                    like natural spoken Hinglish throughout. For any disease or pathogen name, still include \
+                    the scientific/English name alongside the everyday name (in pathogenScientificName) so the \
+                    farmer can show it to an agri-dealer or extension officer unambiguously.""";
+        }
+        String languageName = LANGUAGE_NAMES.getOrDefault(languageCode, "English");
+        return """
+                Write your entire response in %s. Naturally, as it would be written for a farmer who speaks \
+                that language — not a machine translation. For any disease or pathogen name, include the \
+                scientific/English name alongside the localized name (in pathogenScientificName) so the \
+                farmer can show it to an agri-dealer or extension officer unambiguously.""".formatted(languageName);
     }
 
     private CropAnalysisResult parseAndValidate(String responseBody, String declaredCrop) {

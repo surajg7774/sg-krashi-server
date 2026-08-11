@@ -7,11 +7,13 @@ import java.time.Duration;
 
 /**
  * Rate limiter for {@code POST /api/v1/ai/crop-doctor/analyze} (max 10
- * analyses per hour per user — each call costs real inference compute/time,
- * unlike a login attempt). Keyed by user ID rather than client IP: this
- * endpoint is only reachable authenticated, so the account is the
- * meaningful unit to limit, not the network address. See
- * {@link FixedWindowRateLimiter} for the underlying strategy.
+ * analyses per hour per key — each call costs real inference compute/time,
+ * unlike a login attempt). The endpoint is public (Guest Access refinement),
+ * so the caller ({@code CropDoctorServiceImpl}) picks the key: {@code
+ * "user:" + userId} when authenticated, {@code "ip:" + clientIp} for Guests,
+ * since there's no account to key by and the endpoint calls a metered
+ * external API. See {@link FixedWindowRateLimiter} for the underlying
+ * strategy.
  */
 @Component
 public class AiCropDoctorRateLimiter {

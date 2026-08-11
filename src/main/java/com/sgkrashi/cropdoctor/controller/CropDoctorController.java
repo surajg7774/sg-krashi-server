@@ -7,6 +7,7 @@ import com.sgkrashi.cropdoctor.dto.response.CropScanResponse;
 import com.sgkrashi.cropdoctor.dto.response.CropScanSummaryResponse;
 import com.sgkrashi.cropdoctor.dto.response.SupportedCropResponse;
 import com.sgkrashi.cropdoctor.service.CropDoctorService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -37,9 +38,13 @@ public class CropDoctorController {
     public ResponseEntity<ApiResponse<CropScanResponse>> analyze(
             @RequestParam("files") List<MultipartFile> files,
             @RequestParam("declaredCrop") String declaredCrop,
-            @RequestParam(value = "language", defaultValue = "en") String language
+            @RequestParam(value = "language", defaultValue = "en") String language,
+            HttpServletRequest request
     ) {
-        CropScanResponse response = cropDoctorService.analyze(files, declaredCrop, language);
+        // Only actually used for Guest requests (see CropDoctorServiceImpl) —
+        // an authenticated request's rate-limit key comes from the JWT
+        // principal instead, same as every other ownership-scoped endpoint.
+        CropScanResponse response = cropDoctorService.analyze(files, declaredCrop, language, request.getRemoteAddr());
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response, "Scan complete"));
     }
 

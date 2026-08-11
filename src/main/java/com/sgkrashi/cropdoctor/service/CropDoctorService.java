@@ -11,7 +11,12 @@ import java.util.List;
 
 public interface CropDoctorService {
 
-    CropScanResponse analyze(List<MultipartFile> files, String declaredCrop, String language);
+    /**
+     * @param clientIp only used for rate-limiting Guest requests (no user ID
+     *                 to key by); ignored for authenticated requests, which
+     *                 keep the existing per-user limit.
+     */
+    CropScanResponse analyze(List<MultipartFile> files, String declaredCrop, String language, String clientIp);
 
     PaginatedResponse<CropScanSummaryResponse> listMyScans(int page, int size);
 
