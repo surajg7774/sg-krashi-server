@@ -49,11 +49,21 @@ app:
   mail:
     from-address: ${MAIL_FROM:no-reply@sgkrashi.com}
   ai-crop-doctor:
-    # Points at the local sg-krashi-ai-service dev server (see its README).
-    # The key has no default, same as JWT_SECRET/RAZORPAY_* above — set it
-    # via application-local.yml.
+    # Only read when crop-doctor.provider=local (Phase 1 demoted this to a
+    # disabled fallback — see AiServiceClientImpl/LocalModelProvider). Points
+    # at the local sg-krashi-ai-service dev server (see its README) if ever
+    # re-enabled.
     service-url: ${AI_SERVICE_URL:http://localhost:8000}
     api-key: ${AI_SERVICE_API_KEY}
+  gemini:
+    # No default, same as JWT_SECRET/RAZORPAY_* above — set via
+    # application-local.yml. Get a free key at aistudio.google.com/apikey.
+    api-key: ${GEMINI_API_KEY}
+    model: ${GEMINI_MODEL:gemini-3.6-flash}
+
+crop-doctor:
+  # gemini (default) or local — see CropAnalysisProvider implementations.
+  provider: ${CROP_DOCTOR_PROVIDER:gemini}
 
 springdoc:
   swagger-ui:

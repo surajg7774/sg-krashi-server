@@ -7,6 +7,7 @@ import com.sgkrashi.cropdoctor.service.AiServiceClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.stereotype.Component;
@@ -25,8 +26,17 @@ import java.time.Duration;
  * to follow (Razorpay integration goes through its own SDK, not a generic
  * client) — WebClient is used here, called synchronously via {@code .block()}
  * since this is a simple request/response flow, not a streaming one.
+ *
+ * <p>Phase 1 (Gemini) demoted this to the disabled-by-default local
+ * fallback (Section 3.7 of the Phase 1 spec) — {@code @ConditionalOnProperty}
+ * means this bean, and its required {@code AI_SERVICE_URL}/{@code
+ * AI_SERVICE_API_KEY} env vars, are only ever needed if {@code
+ * crop-doctor.provider=local} is explicitly set. With Gemini active (the
+ * default), those env vars can be safely left unset — this bean is never
+ * constructed, so their absence never triggers a startup failure.
  */
 @Component
+@ConditionalOnProperty(prefix = "crop-doctor", name = "provider", havingValue = "local")
 public class AiServiceClientImpl implements AiServiceClient {
 
     private static final Logger log = LoggerFactory.getLogger(AiServiceClientImpl.class);

@@ -35,10 +35,11 @@ public class CropDoctorController {
 
     @PostMapping(value = "/analyze", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<CropScanResponse>> analyze(
-            @RequestParam("file") MultipartFile file,
-            @RequestParam("declaredCrop") String declaredCrop
+            @RequestParam("files") List<MultipartFile> files,
+            @RequestParam("declaredCrop") String declaredCrop,
+            @RequestParam(value = "language", defaultValue = "en") String language
     ) {
-        CropScanResponse response = cropDoctorService.analyze(file, declaredCrop);
+        CropScanResponse response = cropDoctorService.analyze(files, declaredCrop, language);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response, "Scan complete"));
     }
 

@@ -38,12 +38,23 @@ app:
     key-secret: ${RAZORPAY_KEY_SECRET}
     webhook-secret: ${RAZORPAY_WEBHOOK_SECRET}
   ai-crop-doctor:
-    # sg-krashi-ai-service's Railway-internal URL (e.g.
-    # http://sg-krashi-ai-service.railway.internal:8000) — that service has no
-    # public domain, only reachable over Railway's private network. See
-    # sg-krashi-ai-service/README.md "Deploying on Railway".
+    # Only read when crop-doctor.provider=local — Phase 1 made Gemini the
+    # active provider and demoted this to a disabled fallback (see
+    # AiServiceClientImpl/LocalModelProvider, both @ConditionalOnProperty).
+    # Safe to leave AI_SERVICE_URL/AI_SERVICE_API_KEY unset on Railway as
+    # long as the default (gemini) provider stays active — this bean is
+    # then never constructed, so these placeholders are never resolved. No
+    # default here regardless: if someone does opt into provider=local
+    # without setting real values, that should fail loudly at startup, not
+    # silently proceed with a placeholder.
     service-url: ${AI_SERVICE_URL}
     api-key: ${AI_SERVICE_API_KEY}
+  gemini:
+    api-key: ${GEMINI_API_KEY}
+    model: ${GEMINI_MODEL:gemini-3.6-flash}
+
+crop-doctor:
+  provider: ${CROP_DOCTOR_PROVIDER:gemini}
 
 storage:
   # local or s3 — deliberately no default here either: silently falling back

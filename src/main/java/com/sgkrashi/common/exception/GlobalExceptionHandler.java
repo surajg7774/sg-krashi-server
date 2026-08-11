@@ -1,6 +1,7 @@
 package com.sgkrashi.common.exception;
 
 import com.sgkrashi.common.dto.ApiErrorResponse;
+import com.sgkrashi.cropdoctor.exception.AiQuotaExceededException;
 import com.sgkrashi.cropdoctor.exception.AiServiceUnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -67,6 +68,13 @@ public class GlobalExceptionHandler {
         log.warn("Rate limit exceeded: {}", ex.getMessage());
         ApiErrorResponse body = ApiErrorResponse.of("RATE_LIMIT_EXCEEDED", ex.getMessage(), List.of());
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(body);
+    }
+
+    @ExceptionHandler(AiQuotaExceededException.class)
+    public ResponseEntity<ApiErrorResponse> handleAiQuotaExceeded(AiQuotaExceededException ex) {
+        log.warn("AI provider quota exceeded: {}", ex.getMessage());
+        ApiErrorResponse body = ApiErrorResponse.of("AI_QUOTA_EXCEEDED", ex.getMessage(), List.of());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
     }
 
     @ExceptionHandler(AiServiceUnavailableException.class)

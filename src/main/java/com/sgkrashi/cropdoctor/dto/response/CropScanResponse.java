@@ -1,17 +1,28 @@
 package com.sgkrashi.cropdoctor.dto.response;
 
-import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 
 public record CropScanResponse(
         Long id,
         String declaredCrop,
-        String imageUrl,
-        String cropName,
-        String diseaseName,
-        BigDecimal confidenceScore,
+        String language,
+        List<String> imageUrls,
+        String identifiedCrop,
+        String healthStatus,
+        String problem,
+        String pathogenScientificName,
+        String confidenceBand,
         String severity,
-        String recommendation,
+        List<String> symptoms,
+        List<String> possibleCauses,
+        List<String> environmentalFactors,
+        List<String> actionsNow,
+        List<String> prevention,
+        String monitoringGuidance,
+        List<String> warningSignsToEscalate,
+        String limitations,
+        String providerName,
         String modelVersion,
         boolean isUncertain,
         boolean cropMismatch,

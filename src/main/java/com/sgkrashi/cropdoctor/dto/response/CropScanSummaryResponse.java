@@ -1,14 +1,14 @@
 package com.sgkrashi.cropdoctor.dto.response;
 
-import java.math.BigDecimal;
 import java.time.Instant;
 
 public record CropScanSummaryResponse(
         Long id,
         String imageUrl,
-        String cropName,
-        String diseaseName,
-        BigDecimal confidenceScore,
+        String identifiedCrop,
+        String problem,
+        String healthStatus,
+        String confidenceBand,
         boolean isUncertain,
         boolean cropMismatch,
         Instant createdAt

@@ -11,7 +11,7 @@ import java.util.List;
 
 public interface CropDoctorService {
 
-    CropScanResponse analyze(MultipartFile file, String declaredCrop);
+    CropScanResponse analyze(List<MultipartFile> files, String declaredCrop, String language);
 
     PaginatedResponse<CropScanSummaryResponse> listMyScans(int page, int size);
 

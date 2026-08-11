@@ -1,23 +1,24 @@
 package com.sgkrashi.cropdoctor.service.impl;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sgkrashi.auth.security.CurrentUserProvider;
 import com.sgkrashi.common.dto.PaginatedResponse;
 import com.sgkrashi.common.exception.RateLimitExceededException;
 import com.sgkrashi.common.exception.ResourceNotFoundException;
 import com.sgkrashi.common.exception.ValidationException;
-import com.sgkrashi.cropdoctor.dto.response.AiPredictionResponse;
 import com.sgkrashi.cropdoctor.dto.response.CropScanReport;
 import com.sgkrashi.cropdoctor.dto.response.CropScanResponse;
 import com.sgkrashi.cropdoctor.dto.response.CropScanSummaryResponse;
 import com.sgkrashi.cropdoctor.dto.response.SupportedCropResponse;
 import com.sgkrashi.cropdoctor.entity.CropScan;
 import com.sgkrashi.cropdoctor.mapper.CropScanMapper;
+import com.sgkrashi.cropdoctor.provider.ConfidenceBand;
+import com.sgkrashi.cropdoctor.provider.CropAnalysisProvider;
+import com.sgkrashi.cropdoctor.provider.CropAnalysisResult;
 import com.sgkrashi.cropdoctor.ratelimit.AiCropDoctorRateLimiter;
 import com.sgkrashi.cropdoctor.repository.CropScanRepository;
-import com.sgkrashi.cropdoctor.service.AiServiceClient;
 import com.sgkrashi.cropdoctor.service.CropDoctorService;
 import com.sgkrashi.cropdoctor.service.CropScanReportService;
-import com.sgkrashi.cropdoctor.service.RecommendationTextProvider;
 import com.sgkrashi.cropdoctor.service.SupportedCropsProvider;
 import com.sgkrashi.media.storage.StorageProvider;
 import com.sgkrashi.media.validation.ImageContentTypeDetector;
@@ -30,7 +31,6 @@ import org.springframework.web.multipart.MultipartFile;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -41,87 +41,80 @@ public class CropDoctorServiceImpl implements CropDoctorService {
     private static final long MAX_FILE_SIZE_BYTES = 8L * 1024 * 1024;
     private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
     private static final int MIN_DIMENSION_PX = 32;
-    // Below this, the platform tells the user the result is uncertain rather
-    // than presenting it with the same confidence as a strong match — see
-    // Section 8 of the feature spec. 60% is a starting point, not a
-    // scientifically derived cutoff; see sg-krashi-ai-service/README.md for
-    // real accuracy numbers this was chosen against.
-    private static final BigDecimal UNCERTAINTY_THRESHOLD = new BigDecimal("0.60");
-    private static final String HEALTHY_LABEL = "Healthy";
+    private static final int MAX_IMAGES = 3;
+    private static final Set<String> SUPPORTED_LANGUAGES = Set.of("en", "hi", "mr", "gu");
 
     private final StorageProvider storageProvider;
-    private final AiServiceClient aiServiceClient;
+    private final CropAnalysisProvider cropAnalysisProvider;
     private final CropScanRepository cropScanRepository;
     private final CropScanMapper cropScanMapper;
-    private final RecommendationTextProvider recommendationTextProvider;
     private final CropScanReportService cropScanReportService;
     private final CurrentUserProvider currentUserProvider;
     private final AiCropDoctorRateLimiter rateLimiter;
     private final SupportedCropsProvider supportedCropsProvider;
+    private final ObjectMapper objectMapper;
 
     public CropDoctorServiceImpl(
             StorageProvider storageProvider,
-            AiServiceClient aiServiceClient,
+            CropAnalysisProvider cropAnalysisProvider,
             CropScanRepository cropScanRepository,
             CropScanMapper cropScanMapper,
-            RecommendationTextProvider recommendationTextProvider,
             CropScanReportService cropScanReportService,
             CurrentUserProvider currentUserProvider,
             AiCropDoctorRateLimiter rateLimiter,
-            SupportedCropsProvider supportedCropsProvider
+            SupportedCropsProvider supportedCropsProvider,
+            ObjectMapper objectMapper
     ) {
         this.storageProvider = storageProvider;
-        this.aiServiceClient = aiServiceClient;
+        this.cropAnalysisProvider = cropAnalysisProvider;
         this.cropScanRepository = cropScanRepository;
         this.cropScanMapper = cropScanMapper;
-        this.recommendationTextProvider = recommendationTextProvider;
         this.cropScanReportService = cropScanReportService;
         this.currentUserProvider = currentUserProvider;
         this.rateLimiter = rateLimiter;
         this.supportedCropsProvider = supportedCropsProvider;
+        this.objectMapper = objectMapper;
     }
 
     @Override
     @Transactional
-    public CropScanResponse analyze(MultipartFile file, String declaredCrop) {
+    public CropScanResponse analyze(List<MultipartFile> files, String declaredCrop, String language) {
         Long userId = currentUserProvider.getCurrentUserId();
 
         if (!rateLimiter.tryConsume(String.valueOf(userId))) {
-            throw new RateLimitExceededException(
-                    "Too many scan requests. Please try again in a while.");
+            throw new RateLimitExceededException("Too many scan requests. Please try again in a while.");
         }
 
-        validate(file);
+        validateFiles(files);
         // Required, not optional: the whole point of this check is to catch
         // exactly the failure mode confidence alone missed (a confirmed
         // production case — 99.71% confidence, wrong crop AND wrong health
         // status). An optional field would let users skip the safety net.
         String normalizedDeclaredCrop = validateDeclaredCrop(declaredCrop);
+        String normalizedLanguage = validateLanguage(language);
 
-        String imageUrl = storageProvider.store(file);
-        AiPredictionResponse prediction = aiServiceClient.predict(file);
+        List<String> imageUrls = files.stream().map(storageProvider::store).toList();
 
-        boolean isUncertain = prediction.confidenceScore().compareTo(UNCERTAINTY_THRESHOLD) < 0;
-        boolean isHealthy = HEALTHY_LABEL.equals(prediction.diseaseName());
-        // Independent of confidence/uncertainty on purpose — a mismatch is a
-        // mismatch even at 99.71% confidence, which is exactly what the
-        // confirmed production case proved confidence alone can't catch.
-        boolean cropMismatch = !normalizedDeclaredCrop.equalsIgnoreCase(prediction.cropName());
-        String recommendation = recommendationTextProvider.recommendationFor(prediction.classLabel(), isHealthy);
-        recommendation = recommendationTextProvider.applyUncertaintyCaveat(recommendation, isUncertain);
+        CropAnalysisResult result = cropAnalysisProvider.analyze(files, normalizedDeclaredCrop, normalizedLanguage);
 
         CropScan scan = new CropScan();
         scan.setUserId(userId);
         scan.setDeclaredCrop(normalizedDeclaredCrop);
-        scan.setImageUrl(imageUrl);
-        scan.setCropName(prediction.cropName());
-        scan.setDiseaseName(prediction.diseaseName());
-        scan.setConfidenceScore(prediction.confidenceScore());
-        scan.setSeverity(prediction.severity());
-        scan.setRecommendation(recommendation);
-        scan.setModelVersion(prediction.modelVersion());
-        scan.setUncertain(isUncertain);
-        scan.setCropMismatch(cropMismatch);
+        scan.setLanguage(normalizedLanguage);
+        scan.setImageUrl(imageUrls.get(0));
+        scan.setImageUrls(writeJson(imageUrls));
+        scan.setCropName(result.identifiedCrop());
+        scan.setDiseaseName(result.problem());
+        scan.setSeverity(result.severity() == null ? null : result.severity().name());
+        scan.setModelVersion(result.providerModelVersion());
+        scan.setProviderName(result.providerName());
+        scan.setConfidenceBand(result.confidenceBand().name());
+        scan.setReportJson(writeJson(result));
+        // Independent of each other on purpose — a result can be
+        // mismatched-but-confident, uncertain-but-crop-matched, both, or
+        // neither. Never derive one from the other.
+        scan.setUncertain(result.confidenceBand() == ConfidenceBand.LOW);
+        scan.setCropMismatch(!result.cropMatchesDeclared());
 
         CropScan saved = cropScanRepository.save(scan);
         return cropScanMapper.toResponse(saved);
@@ -140,6 +133,17 @@ public class CropDoctorServiceImpl implements CropDoctorService {
             throw new ValidationException("Unrecognized crop: " + declaredCrop);
         }
         return SupportedCropsProvider.normalize(declaredCrop);
+    }
+
+    private String validateLanguage(String language) {
+        if (language == null || language.isBlank()) {
+            return "en";
+        }
+        String normalized = language.trim().toLowerCase(Locale.ROOT);
+        if (!SUPPORTED_LANGUAGES.contains(normalized)) {
+            throw new ValidationException("Unsupported language: " + language);
+        }
+        return normalized;
     }
 
     @Override
@@ -193,6 +197,16 @@ public class CropDoctorServiceImpl implements CropDoctorService {
         return scan;
     }
 
+    private void validateFiles(List<MultipartFile> files) {
+        if (files == null || files.isEmpty()) {
+            throw new ValidationException("At least one image is required");
+        }
+        if (files.size() > MAX_IMAGES) {
+            throw new ValidationException("A maximum of " + MAX_IMAGES + " images is allowed per scan");
+        }
+        files.forEach(this::validate);
+    }
+
     /**
      * Mirrors {@code MediaServiceImpl.validate} (Module 5) exactly — same
      * magic-byte check via the now-shared {@link ImageContentTypeDetector} —
@@ -234,10 +248,19 @@ public class CropDoctorServiceImpl implements CropDoctorService {
     }
 
     private String buildFilename(CropScan scan) {
-        String slug = (scan.getCropName() + "-" + scan.getDiseaseName())
+        String problem = scan.getDiseaseName() == null ? "healthy" : scan.getDiseaseName();
+        String slug = (scan.getCropName() + "-" + problem)
                 .toLowerCase(Locale.ROOT)
                 .replaceAll("[^a-z0-9]+", "-")
                 .replaceAll("(^-|-$)", "");
         return "crop-scan-" + scan.getId() + (slug.isBlank() ? "" : "-" + slug) + ".pdf";
+    }
+
+    private String writeJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to serialize crop scan data", ex);
+        }
     }
 }
