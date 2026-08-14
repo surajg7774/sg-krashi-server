@@ -54,6 +54,11 @@ app:
     webhook-secret: ${RAZORPAY_WEBHOOK_SECRET}
   mail:
     from-address: ${MAIL_FROM:no-reply@sgkrashi.com}
+    # smtp (default, EmailSender/Mailpit) or brevo-api (BrevoApiEmailSender,
+    # HTTPS-based — see its Javadoc). Unset here on purpose: matchIfMissing on
+    # EmailSender's @ConditionalOnProperty makes local dev default to smtp
+    # without needing this line, same as crop-doctor.provider's own pattern.
+    # brevo.api-key is only ever read when provider=brevo-api.
   ai-crop-doctor:
     # Only read when crop-doctor.provider=local (Phase 1 demoted this to a
     # disabled fallback — see AiServiceClientImpl/LocalModelProvider). Points

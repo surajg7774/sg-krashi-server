@@ -14,6 +14,14 @@ spring:
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
   mail:
+    # Kept configured even though MAIL_PROVIDER=brevo-api is what's actually
+    # active on Railway (see app.mail.provider below) — Spring Boot's mail
+    # autoconfiguration creates this JavaMailSender bean whenever host is
+    # set, regardless of app.mail.provider, but nothing injects it once
+    # EmailSender's own @ConditionalOnProperty keeps it from being created.
+    # An unused bean, not a problem — left in case a future host doesn't
+    # block outbound SMTP the way Railway does. See BrevoApiEmailSender's
+    # Javadoc for why raw SMTP had to be abandoned here specifically.
     host: ${MAIL_HOST}
     port: ${MAIL_PORT}
     username: ${MAIL_USERNAME}
@@ -45,6 +53,23 @@ app:
   # should point at — see the base application.yml's comment for why this
   # isn't just reused from CORS_ALLOWED_ORIGINS.
   frontend-url: ${FRONTEND_URL}
+  mail:
+    # brevo-api, not smtp — Railway blocks outbound SMTP at the platform
+    # level (confirmed: identical connection failures on both port 587 and
+    # Brevo's documented 2525 fallback), so EmailSender's raw-SMTP path can
+    # never work here regardless of credentials. BrevoApiEmailSender reaches
+    # the same Brevo account over HTTPS instead, which Railway does allow
+    # (same protocol Gemini/Cloudinary/Razorpay already use successfully).
+    # No default — an unrecognized/missing value here should fail loudly at
+    # startup (see this file's own header comment), not silently fall back
+    # to a channel already proven broken on this host.
+    provider: ${MAIL_PROVIDER}
+    brevo:
+      # A Brevo API key, NOT the SMTP key used by the (now-unused-on-Railway)
+      # spring.mail.* block above — separate credential, separate tab in the
+      # Brevo dashboard (account icon -> SMTP & API -> API Keys). Only read
+      # when provider=brevo-api actually constructs BrevoApiEmailSender.
+      api-key: ${BREVO_API_KEY}
   jwt:
     secret: ${JWT_SECRET}
   razorpay:
