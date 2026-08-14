@@ -24,6 +24,16 @@ spring:
           auth: true
           starttls:
             enable: true
+          # Found live: without these, an unreachable/blocked SMTP port
+          # (many PaaS hosts restrict outbound 587 by default) hangs
+          # JavaMailSender indefinitely instead of failing — which,
+          # through AuthServiceImpl.forgotPassword's synchronous send,
+          # hung the whole HTTP request (observed: 2+ minutes, no
+          # response). All three timeouts matter: connection alone isn't
+          # enough if the TLS handshake or the send itself is what stalls.
+          connectiontimeout: 10000
+          timeout: 10000
+          writetimeout: 10000
 
 app:
   cors:
