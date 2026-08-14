@@ -130,4 +130,20 @@ public interface AnalyticsQueryRepository extends JpaRepository<Payment, Long> {
             GROUP BY i.module_type
             """, nativeQuery = true)
     List<Object[]> findConversionByModuleType(@Param("from") Instant from, @Param("to") Instant to);
+
+    /**
+     * Predictive Analytics — units sold per product across completed orders
+     * within the trailing window; {@code ForecastServiceImpl.getStockRisk()}
+     * divides this by the window length for an average daily sales rate.
+     */
+    @Query(value = """
+            SELECT oi.product_id AS productId, SUM(oi.quantity) AS totalQty
+            FROM order_items oi
+            JOIN orders o ON o.id = oi.order_id
+            WHERE oi.item_type = 'PRODUCT'
+              AND o.status IN ('CONFIRMED', 'REFUNDED')
+              AND o.created_at >= :from AND o.created_at < :to
+            GROUP BY oi.product_id
+            """, nativeQuery = true)
+    List<Object[]> findRecentProductSalesQuantity(@Param("from") Instant from, @Param("to") Instant to);
 }

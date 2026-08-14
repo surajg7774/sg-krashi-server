@@ -2,9 +2,12 @@ package com.sgkrashi.analytics.controller;
 
 import com.sgkrashi.analytics.dto.response.ConversionReportResponse;
 import com.sgkrashi.analytics.dto.response.OccupancyReportResponse;
+import com.sgkrashi.analytics.dto.response.RevenueForecastResponse;
 import com.sgkrashi.analytics.dto.response.RevenueReportResponse;
+import com.sgkrashi.analytics.dto.response.StockRiskResponse;
 import com.sgkrashi.analytics.dto.response.TopListingsResponse;
 import com.sgkrashi.analytics.service.AnalyticsService;
+import com.sgkrashi.analytics.service.ForecastService;
 import com.sgkrashi.common.dto.ApiResponse;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ContentDisposition;
@@ -38,9 +41,11 @@ public class AdminAnalyticsController {
     private static final ZoneId ADMIN_ZONE = ZoneId.of("Asia/Kolkata");
 
     private final AnalyticsService analyticsService;
+    private final ForecastService forecastService;
 
-    public AdminAnalyticsController(AnalyticsService analyticsService) {
+    public AdminAnalyticsController(AnalyticsService analyticsService, ForecastService forecastService) {
         this.analyticsService = analyticsService;
+        this.forecastService = forecastService;
     }
 
     @GetMapping("/revenue")
@@ -85,6 +90,20 @@ public class AdminAnalyticsController {
     ) {
         var result = analyticsService.getConversionReport(toInstant(from), toExclusiveEndInstant(to));
         return ResponseEntity.ok(ApiResponse.success(result, "Conversion report retrieved"));
+    }
+
+    @GetMapping("/forecast/revenue")
+    public ResponseEntity<ApiResponse<RevenueForecastResponse>> revenueForecast(
+            @RequestParam(defaultValue = "30") int days
+    ) {
+        var result = forecastService.getRevenueForecast(days);
+        return ResponseEntity.ok(ApiResponse.success(result, "Revenue forecast retrieved"));
+    }
+
+    @GetMapping("/forecast/stock-risk")
+    public ResponseEntity<ApiResponse<StockRiskResponse>> stockRisk() {
+        var result = forecastService.getStockRisk();
+        return ResponseEntity.ok(ApiResponse.success(result, "Stock risk retrieved"));
     }
 
     @GetMapping("/export")
