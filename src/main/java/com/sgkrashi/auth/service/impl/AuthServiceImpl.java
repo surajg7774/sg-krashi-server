@@ -17,9 +17,12 @@ import com.sgkrashi.auth.service.AuthResult;
 import com.sgkrashi.auth.service.AuthService;
 import com.sgkrashi.common.exception.DuplicateResourceException;
 import com.sgkrashi.common.exception.InvalidTokenException;
+import com.sgkrashi.notification.entity.Notification;
+import com.sgkrashi.notification.sender.NotificationSender;
 import io.jsonwebtoken.JwtException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -34,6 +37,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Set;
 
 @Service
@@ -50,6 +54,8 @@ public class AuthServiceImpl implements AuthService {
     private final AuthenticationManager authenticationManager;
     private final JwtTokenProvider jwtTokenProvider;
     private final UserMapper userMapper;
+    private final List<NotificationSender> notificationSenders;
+    private final String frontendUrl;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public AuthServiceImpl(
@@ -59,7 +65,9 @@ public class AuthServiceImpl implements AuthService {
             PasswordEncoder passwordEncoder,
             AuthenticationManager authenticationManager,
             JwtTokenProvider jwtTokenProvider,
-            UserMapper userMapper
+            UserMapper userMapper,
+            List<NotificationSender> notificationSenders,
+            @Value("${app.frontend-url}") String frontendUrl
     ) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
@@ -68,6 +76,8 @@ public class AuthServiceImpl implements AuthService {
         this.authenticationManager = authenticationManager;
         this.jwtTokenProvider = jwtTokenProvider;
         this.userMapper = userMapper;
+        this.notificationSenders = notificationSenders;
+        this.frontendUrl = frontendUrl;
     }
 
     /**
@@ -161,18 +171,43 @@ public class AuthServiceImpl implements AuthService {
     }
 
     /**
-     * Generates a reset link and logs it instead of sending an email — the
-     * Notifications module (Module 13) will wire real delivery. Responds
-     * identically whether or not the email is registered, so this endpoint
-     * cannot be used to enumerate accounts.
+     * Generates a reset link and emails it directly via every registered
+     * {@link NotificationSender} — deliberately NOT routed through {@code
+     * NotificationService.notify()} like Order/Booking/Refund notifications
+     * are: that path persists a {@code Notification} row shown in-app via
+     * the notification bell, and a live, usable password-reset token has no
+     * business sitting in a general-purpose table a user can browse back to
+     * later (nor should it outlive the token's own short expiry). The
+     * transient {@link Notification} below exists only to satisfy {@code
+     * NotificationSender.send}'s signature — it's never persisted. Each
+     * sender is isolated the same way {@code NotificationServiceImpl.notify}
+     * isolates its senders: a broken SMTP connection must not surface as a
+     * 500 here, since that would reveal whether the email was registered.
+     * Still logs the link too — useful in local dev without needing a real
+     * inbox, and this is a server log, not anything user-facing.
      */
     @Override
     public void forgotPassword(ForgotPasswordRequest request) {
         userRepository.findByEmail(request.email()).ifPresent(user -> {
             String resetToken = jwtTokenProvider.generatePasswordResetToken(user.getEmail());
-            // TODO(Module 13): wire real email sending instead of logging the reset link.
-            log.info("Password reset requested for {}. Reset link: /reset-password?token={}",
-                    user.getEmail(), resetToken);
+            String resetLink = frontendUrl + "/reset-password?token=" + resetToken;
+            log.info("Password reset requested for {}. Reset link: {}", user.getEmail(), resetLink);
+
+            Notification transientNotification = new Notification();
+            transientNotification.setTitle("Reset Your SG Krashi Password");
+            transientNotification.setMessage(
+                    "We received a request to reset your password. Click the link below to choose a new one:\n\n"
+                            + resetLink
+                            + "\n\nIf you didn't request this, you can safely ignore this email.");
+
+            for (NotificationSender sender : notificationSenders) {
+                try {
+                    sender.send(transientNotification, user);
+                } catch (Exception ex) {
+                    log.warn("Password reset email failed to send via {} for {}: {}",
+                            sender.getClass().getSimpleName(), user.getEmail(), ex.getMessage());
+                }
+            }
         });
     }
 

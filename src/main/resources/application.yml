@@ -40,6 +40,12 @@ spring:
 app:
   cors:
     allowed-origins: http://localhost:5173
+  # Used to build the actual clickable link in a password-reset email
+  # (frontend-url + /reset-password?token=...) — deliberately a single value,
+  # not reused from app.cors.allowed-origins, since that's a list (could have
+  # a preview URL alongside the real domain) and there's only ever one right
+  # place to send a user to click through.
+  frontend-url: ${FRONTEND_URL:http://localhost:5173}
   jwt:
     secret: ${JWT_SECRET}
   razorpay:
