@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
@@ -48,4 +49,42 @@ public interface CropListingRepository extends JpaRepository<CropListing, Long>,
     long countByFarmerId(Long farmerId);
 
     long countByFarmerIdAndIsActiveTrue(Long farmerId);
+
+    /** Recommendation System — "similar items" for crop listings. See {@code ProductRepository.findSimilarByCategoryAndPriceRange}'s Javadoc for the NULLS-last and price-band reasoning. */
+    @Query("""
+            SELECT c FROM CropListing c
+            WHERE c.category.id = :categoryId
+              AND c.id <> :excludedId
+              AND c.isActive = true
+              AND c.unitPrice BETWEEN :minPrice AND :maxPrice
+            ORDER BY COALESCE(c.avgRating, 0) DESC, c.reviewCount DESC
+            """)
+    List<CropListing> findSimilarByCategoryAndPriceRange(
+            @Param("categoryId") Long categoryId,
+            @Param("excludedId") Long excludedId,
+            @Param("minPrice") BigDecimal minPrice,
+            @Param("maxPrice") BigDecimal maxPrice,
+            Pageable pageable);
+
+    /** Recommendation System — "for you" seed. See {@code ProductRepository.findTopRatedInCategories}'s Javadoc for the excludeIds sentinel note. */
+    @Query("""
+            SELECT c FROM CropListing c
+            WHERE c.isActive = true
+              AND c.category.id IN :categoryIds
+              AND c.id NOT IN :excludeIds
+            ORDER BY COALESCE(c.avgRating, 0) DESC, c.reviewCount DESC
+            """)
+    List<CropListing> findTopRatedInCategories(
+            @Param("categoryIds") List<Long> categoryIds,
+            @Param("excludeIds") List<Long> excludeIds,
+            Pageable pageable);
+
+    /** Recommendation System — "for you" fallback for no order history. See {@code ProductRepository.findTopRatedOverall}'s Javadoc. */
+    @Query("""
+            SELECT c FROM CropListing c
+            WHERE c.isActive = true
+              AND c.id NOT IN :excludeIds
+            ORDER BY COALESCE(c.avgRating, 0) DESC, c.reviewCount DESC
+            """)
+    List<CropListing> findTopRatedOverall(@Param("excludeIds") List<Long> excludeIds, Pageable pageable);
 }

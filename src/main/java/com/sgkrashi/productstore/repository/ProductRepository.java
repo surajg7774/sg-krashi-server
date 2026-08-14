@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
@@ -54,4 +55,51 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
 
     /** Uniqueness check for Module 15's Admin slug generation — deliberately NOT scoped to isActive, so a new slug can't collide with a soft-deleted product's. */
     boolean existsBySlug(String slug);
+
+    /** Predictive Analytics — every active product, for the stock-risk sweep (RecommendationService/ForecastService's own read, not a dashboard KPI). */
+    List<Product> findByIsActiveTrue();
+
+    /**
+     * Recommendation System — "similar items" (content-based): same category
+     * and a similar price band, ranked by rating then review count.
+     * {@code COALESCE(..., 0)} sorts not-yet-rated products last rather than
+     * first, which plain {@code ORDER BY avg_rating DESC} would do since NULL
+     * sorts first in MySQL's default DESC ordering.
+     */
+    @Query("""
+            SELECT p FROM Product p
+            WHERE p.category.id = :categoryId
+              AND p.id <> :excludedId
+              AND p.isActive = true
+              AND p.price BETWEEN :minPrice AND :maxPrice
+            ORDER BY COALESCE(p.avgRating, 0) DESC, p.reviewCount DESC
+            """)
+    List<Product> findSimilarByCategoryAndPriceRange(
+            @Param("categoryId") Long categoryId,
+            @Param("excludedId") Long excludedId,
+            @Param("minPrice") BigDecimal minPrice,
+            @Param("maxPrice") BigDecimal maxPrice,
+            Pageable pageable);
+
+    /** Recommendation System — "for you", seeded by the categories a customer has actually purchased from. {@code excludeIds} must be non-empty (a sentinel like {@code [-1]}) — an empty JPQL IN-list is invalid. */
+    @Query("""
+            SELECT p FROM Product p
+            WHERE p.isActive = true
+              AND p.category.id IN :categoryIds
+              AND p.id NOT IN :excludeIds
+            ORDER BY COALESCE(p.avgRating, 0) DESC, p.reviewCount DESC
+            """)
+    List<Product> findTopRatedInCategories(
+            @Param("categoryIds") List<Long> categoryIds,
+            @Param("excludeIds") List<Long> excludeIds,
+            Pageable pageable);
+
+    /** Recommendation System — "for you" fallback for a customer with no order history at all (see {@link #findTopRatedInCategories}'s excludeIds note). */
+    @Query("""
+            SELECT p FROM Product p
+            WHERE p.isActive = true
+              AND p.id NOT IN :excludeIds
+            ORDER BY COALESCE(p.avgRating, 0) DESC, p.reviewCount DESC
+            """)
+    List<Product> findTopRatedOverall(@Param("excludeIds") List<Long> excludeIds, Pageable pageable);
 }

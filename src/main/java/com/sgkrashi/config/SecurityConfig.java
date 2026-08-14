@@ -63,7 +63,13 @@ public class SecurityConfig {
             // A Guest needs this to populate the crop dropdown before they can
             // even attempt an analysis (Guest Access refinement) — the analyze
             // endpoint itself being public isn't enough on its own.
-            "/api/v1/ai/crop-doctor/supported-crops"
+            "/api/v1/ai/crop-doctor/supported-crops",
+            // Recommendation System — a first-time visitor sees these too, no
+            // login required. /for-you is deliberately NOT here (see
+            // RecommendationController's Javadoc) since it reads the caller's
+            // own order history.
+            "/api/v1/recommendations/similar",
+            "/api/v1/recommendations/frequently-bought-with"
     };
 
     // POST-only, scoped by method for the same reason as PUBLIC_GET_ENDPOINTS —
