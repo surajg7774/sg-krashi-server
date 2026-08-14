@@ -381,6 +381,16 @@ public class BookingServiceImpl implements BookingService {
      * — this is an admin override, not the customer self-service path (see
      * {@link #cancelBooking}). CANCELLED and COMPLETED are terminal: once
      * reached, no further admin status change is accepted (only notes).
+     *
+     * <p>CONFIRMED and CANCELLED delegate to {@link #markConfirmed}/{@link
+     * #adminCancel} so the customer actually gets notified — this used to set
+     * {@code status} directly with no event, unlike the payment-webhook
+     * (CONFIRMED) and self-service (CANCELLED) paths for the exact same
+     * transitions. COMPLETED and PENDING_PAYMENT are left as a direct status
+     * set: there's no existing notification copy or event for "trip
+     * completed" anywhere in the system yet, and the task this follows didn't
+     * call for one — this only wires up the two transitions a customer is
+     * already told about elsewhere.
      */
     @Override
     @Transactional
@@ -393,14 +403,21 @@ public class BookingServiceImpl implements BookingService {
 
         AdminBookingResponse before = getBookingDetailForAdmin(bookingId);
         booking.setAdminNotes(adminNotes);
+        bookingRepository.save(booking);
+
         if (newStatus != booking.getStatus()) {
-            booking.setStatus(newStatus);
-            if (newStatus == BookingStatus.CANCELLED) {
-                booking.setCancelledAt(Instant.now());
-                booking.setCancellationReason("Cancelled by admin");
+            if (newStatus == BookingStatus.CONFIRMED) {
+                markConfirmed(bookingId);
+            } else if (newStatus == BookingStatus.CANCELLED) {
+                adminCancel(bookingId);
+            } else {
+                Booking toUpdate = getBookingEntityOrThrow(bookingId);
+                toUpdate.setStatus(newStatus);
+                bookingRepository.save(toUpdate);
             }
         }
-        Booking saved = bookingRepository.save(booking);
+
+        Booking saved = getBookingEntityOrThrow(bookingId);
         BookableItem item = resolveBookableItem(saved.getBookableType(), saved.getBookableId());
         User user = userRepository.findById(saved.getUserId()).orElse(null);
         Payment payment = paymentRepository.findByPayableTypeAndPayableId(PAYABLE_TYPE_BOOKING, bookingId).orElse(null);
@@ -412,6 +429,21 @@ public class BookingServiceImpl implements BookingService {
                 refunded, payment != null ? payment.getRefundedAt() : null);
         auditLogService.record(AuditActions.BOOKING_STATUS_UPDATED, ENTITY_TYPE_BOOKING, bookingId, before, after);
         return after;
+    }
+
+    /**
+     * Admin-triggered cancellation — separate from {@link #cancelBooking}
+     * (the customer self-service path, which enforces the free-cancellation
+     * window) but publishes the identical {@link BookingCancelledEvent}, so
+     * the customer gets the same notification either way.
+     */
+    private void adminCancel(Long bookingId) {
+        Booking booking = getBookingEntityOrThrow(bookingId);
+        booking.setStatus(BookingStatus.CANCELLED);
+        booking.setCancelledAt(Instant.now());
+        booking.setCancellationReason("Cancelled by admin");
+        Booking saved = bookingRepository.save(booking);
+        eventPublisher.publishEvent(new BookingCancelledEvent(saved.getId(), saved.getUserId(), saved.getCancellationReason()));
     }
 
     private List<AdminBookingResponse> buildAdminResponses(List<Booking> bookings, Map<Long, User> usersById, Map<Long, Payment> paymentsByBookingId) {

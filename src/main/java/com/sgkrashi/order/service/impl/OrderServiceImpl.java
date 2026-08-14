@@ -408,6 +408,16 @@ public class OrderServiceImpl implements OrderService {
      * {@code RefundService}'s real gateway refund, or the Order/Payment
      * REFUNDED-ness invariant (an Order is only REFUNDED if its Payment
      * genuinely was) would be silently broken.
+     *
+     * <p>Delegates the actual transition to {@link #markConfirmed}/{@link
+     * #markPaymentFailed} — the same methods the payment webhook uses —
+     * rather than setting {@code status} directly. This used to just flip the
+     * column, which meant an admin reconciling a missed webhook silently sent
+     * no notification (unlike the webhook path) and, for PAYMENT_FAILED
+     * specifically, never restored the stock/quantity that checkout had
+     * already decremented — a real inventory bug, not just a missing email.
+     * Reusing these methods fixes both for free and avoids a second
+     * notification mechanism for the same two states.
      */
     @Override
     @Transactional
@@ -422,13 +432,16 @@ public class OrderServiceImpl implements OrderService {
         Order order = getOrderEntityOrThrow(orderId);
         AdminOrderDetailResponse before = getOrderDetailForAdmin(orderId);
         order.setAdminNotes(adminNotes);
+        orderRepository.save(order);
+
         if (newStatus != order.getStatus()) {
-            order.setStatus(newStatus);
-            orderRepository.save(order);
-            recordStatusHistory(order, newStatus, "Updated by admin");
-        } else {
-            orderRepository.save(order);
+            if (newStatus == OrderStatus.CONFIRMED) {
+                markConfirmed(orderId);
+            } else {
+                markPaymentFailed(orderId);
+            }
         }
+
         AdminOrderDetailResponse after = getOrderDetailForAdmin(orderId);
         auditLogService.record(AuditActions.ORDER_STATUS_UPDATED, ENTITY_TYPE_ORDER, orderId, before, after);
         return after;
