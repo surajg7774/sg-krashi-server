@@ -63,7 +63,22 @@ public class CloudinaryStorageProvider implements StorageProvider {
     public void delete(String url) {
         String publicId = extractPublicId(url);
         try {
-            cloudinary.uploader().destroy(publicId, ObjectUtils.asMap("resource_type", "image"));
+            // invalidate=true matters here specifically: destroy() alone only
+            // removes the asset from Cloudinary's own storage — the delivery
+            // URL stays served from CDN edge caches (30-day max-age on these
+            // responses) until invalidation is explicitly requested. Without
+            // this, a "deleted" image keeps loading at its old URL for weeks.
+            Map<?, ?> result = cloudinary.uploader().destroy(publicId, ObjectUtils.asMap(
+                    "resource_type", "image",
+                    "invalidate", true));
+            if (!"ok".equals(result.get("result"))) {
+                // Fail loudly rather than silently — destroy() doesn't throw
+                // for a "not found" outcome, it just returns that in the
+                // result map, which a caller ignoring the return value (as
+                // this used to) would never notice.
+                throw new IllegalStateException(
+                        "Cloudinary reported deletion did not succeed for " + publicId + ": " + result.get("result"));
+            }
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to delete stored file: " + publicId, ex);
         }
