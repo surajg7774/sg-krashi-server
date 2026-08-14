@@ -25,6 +25,7 @@
         <razorpay.version>1.4.7</razorpay.version>
         <aws-sdk.version>2.29.52</aws-sdk.version>
         <openpdf.version>2.0.3</openpdf.version>
+        <cloudinary.version>2.0.0</cloudinary.version>
     </properties>
 
     <dependencies>
@@ -94,16 +95,33 @@
             <version>${razorpay.version}</version>
         </dependency>
 
-        <!-- S3-compatible object storage for S3StorageProvider (Task 1) — the
-             plain client, not the Spring Cloud AWS starter, since only
-             put/delete + a configurable endpoint override are needed. Works
-             against real AWS S3 or any S3-compatible provider (DigitalOcean
-             Spaces, Backblaze B2, Cloudinary's S3 endpoint, MinIO, ...) via
-             S3_ENDPOINT. -->
+        <!-- S3-compatible object storage for S3StorageProvider — the plain
+             client, not the Spring Cloud AWS starter, since only put/delete +
+             a configurable endpoint override are needed. Works against real
+             AWS S3 or any genuinely S3-protocol-compatible provider
+             (DigitalOcean Spaces, Backblaze B2, self-hosted MinIO, ...) via
+             S3_ENDPOINT. Cloudinary is NOT one of these — it has no
+             S3-compatible endpoint at all, despite an earlier version of this
+             comment claiming otherwise; see CloudinaryStorageProvider for its
+             actual (REST upload API) integration. -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>
             <version>${aws-sdk.version}</version>
+        </dependency>
+
+        <!-- Cloudinary object storage for CloudinaryStorageProvider — the
+             real Cloudinary Java SDK (cloud_name/api_key/api_secret + its own
+             REST upload API), not the S3 client above, since Cloudinary is
+             not S3-protocol-compatible. cloudinary-http5 is the current
+             (Apache HttpClient 5-based) artifact; cloudinary-taglib and
+             dotenv-java from Cloudinary's own quickstart aren't needed here
+             — no JSP tags, and Spring's own @Value/env-var binding already
+             covers what dotenv-java is for. -->
+        <dependency>
+            <groupId>com.cloudinary</groupId>
+            <artifactId>cloudinary-http5</artifactId>
+            <version>${cloudinary.version}</version>
         </dependency>
 
         <!-- AI Crop Doctor (Task: com.sgkrashi.cropdoctor) — WebClient is the HTTP

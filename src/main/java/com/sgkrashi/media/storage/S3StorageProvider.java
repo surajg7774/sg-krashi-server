@@ -18,11 +18,14 @@ import java.net.URI;
 import java.util.UUID;
 
 /**
- * Production storage: uploads to any S3-compatible object store — real AWS
- * S3, DigitalOcean Spaces, Backblaze B2, Cloudinary's S3 endpoint, a
+ * Production storage: uploads to any genuinely S3-protocol-compatible
+ * object store — real AWS S3, DigitalOcean Spaces, Backblaze B2, a
  * self-hosted MinIO, etc. — via {@code S3_ENDPOINT} (blank/unset means real
  * AWS S3). Active only when {@code STORAGE_PROVIDER=s3}; see
- * {@link LocalStorageProvider} for the dev-default counterpart.
+ * {@link LocalStorageProvider} for the dev-default counterpart and {@link
+ * CloudinaryStorageProvider} for Cloudinary specifically — it is NOT
+ * S3-compatible (no S3 endpoint of any kind), so it's a separate provider
+ * with its own real API, not just another {@code S3_ENDPOINT} value here.
  *
  * <p>Deliberately does NOT set an object ACL on upload. AWS S3 buckets
  * created since ~2023 default to "Bucket owner enforced" Object Ownership,

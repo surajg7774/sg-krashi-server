@@ -57,9 +57,12 @@ crop-doctor:
   provider: ${CROP_DOCTOR_PROVIDER:gemini}
 
 storage:
-  # local or s3 — deliberately no default here either: silently falling back
-  # to local-disk storage in production (files gone on next redeploy) is
-  # exactly the kind of silent failure this profile exists to prevent.
+  # local, s3, or cloudinary — deliberately no default here either: silently
+  # falling back to local-disk storage in production (files gone on next
+  # redeploy) is exactly the kind of silent failure this profile exists to
+  # prevent. Only the block matching the chosen provider needs its env vars
+  # actually set — the other provider's bean is never constructed
+  # (@ConditionalOnProperty), so its placeholders are never resolved.
   provider: ${STORAGE_PROVIDER}
   s3:
     bucket-name: ${S3_BUCKET_NAME}
@@ -68,6 +71,10 @@ storage:
     secret-key: ${S3_SECRET_KEY}
     endpoint: ${S3_ENDPOINT:}
     public-url-base: ${S3_PUBLIC_URL_BASE}
+  cloudinary:
+    cloud-name: ${CLOUDINARY_CLOUD_NAME}
+    api-key: ${CLOUDINARY_API_KEY}
+    api-secret: ${CLOUDINARY_API_SECRET}
 
 server:
   # Most PaaS hosts (Railway, Render, etc.) terminate HTTPS at their edge and

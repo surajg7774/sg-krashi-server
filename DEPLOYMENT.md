@@ -25,7 +25,7 @@ running with an empty secret.
 | `MAIL_USERNAME` | | |
 | `MAIL_PASSWORD` | | |
 | `CORS_ALLOWED_ORIGINS` | `https://sgkrashi.com,https://sgkrashi-preview.vercel.app` | Comma-separated, no wildcards |
-| `STORAGE_PROVIDER` | `s3` | `local` or `s3` — see [Storage setup](#2-object-storage-s3-compatible) below. No default; must be set explicitly |
+| `STORAGE_PROVIDER` | `cloudinary` | `local`, `s3`, or `cloudinary` — see [Storage setup](#2-object-storage) below. No default; must be set explicitly |
 
 ### S3 storage variables (only when `STORAGE_PROVIDER=s3`)
 
@@ -35,16 +35,35 @@ running with an empty secret.
 | `S3_REGION` | `ap-south-1` | |
 | `S3_ACCESS_KEY` | | |
 | `S3_SECRET_KEY` | | |
-| `S3_ENDPOINT` | *(blank for real AWS S3)* | Set this for a non-AWS S3-compatible provider — DigitalOcean Spaces, Backblaze B2, Cloudinary's S3 endpoint, self-hosted MinIO, etc. |
+| `S3_ENDPOINT` | *(blank for real AWS S3)* | Set this for a non-AWS but genuinely S3-**protocol**-compatible provider — DigitalOcean Spaces, Backblaze B2, self-hosted MinIO, etc. Cloudinary is NOT one of these (see below) — don't point it here. |
 | `S3_PUBLIC_URL_BASE` | `https://sgkrashi-media.s3.ap-south-1.amazonaws.com` | The base URL uploaded images are publicly reachable at — varies by provider, so this is supplied directly rather than guessed from bucket/region |
 
-## 2. Object storage (S3-compatible)
+### Cloudinary storage variables (only when `STORAGE_PROVIDER=cloudinary`)
+
+| Variable | Example | Notes |
+|---|---|---|
+| `CLOUDINARY_CLOUD_NAME` | `dxyz1234` | From the Cloudinary dashboard |
+| `CLOUDINARY_API_KEY` | | |
+| `CLOUDINARY_API_SECRET` | | Treat this like any other secret — if it's ever exposed (committed, pasted somewhere public), regenerate it in the Cloudinary dashboard immediately, the same as an AWS key |
+
+## 2. Object storage
 
 The app never writes files to local disk in production — `STORAGE_PROVIDER=s3`
-switches `MediaService` to `S3StorageProvider`, which works against **any**
-S3-compatible provider, not just AWS.
+or `STORAGE_PROVIDER=cloudinary` switches `MediaService` off `LocalStorageProvider`
+onto one of two real providers, each with its own config block above:
 
-**Bucket setup, regardless of provider:**
+- **`s3`** → `S3StorageProvider`, which works against any provider that speaks
+  the actual S3 protocol (real AWS S3, DigitalOcean Spaces, Backblaze B2,
+  self-hosted MinIO).
+- **`cloudinary`** → `CloudinaryStorageProvider`. Cloudinary is **not**
+  S3-protocol-compatible — it has no S3 endpoint at all, despite an earlier
+  version of this doc claiming otherwise — so it's a separate provider using
+  Cloudinary's own REST upload API and its own credential shape
+  (`cloud_name`/`api_key`/`api_secret`, not an access/secret key pair). Public
+  read and CORS are Cloudinary account-level/upload-preset settings, not a
+  bucket policy — the steps below (1-3) are S3-specific and don't apply to it.
+
+**S3 bucket setup (only for `STORAGE_PROVIDER=s3`):**
 
 1. Create a bucket (private by default is fine — public *read* access is
    granted below, not via ACLs on upload).
@@ -70,8 +89,8 @@ S3-compatible provider, not just AWS.
    }
    ```
 
-   For DigitalOcean Spaces / Backblaze B2 / Cloudinary / others, use that
-   provider's equivalent "make bucket contents public" setting.
+   For DigitalOcean Spaces / Backblaze B2 / others, use that provider's
+   equivalent "make bucket contents public" setting.
 3. **CORS.** The bucket needs to allow `GET` from your frontend's origin(s)
    so browsers can load images directly from it:
 
@@ -90,6 +109,22 @@ S3-compatible provider, not just AWS.
    reachable — this is provider- and configuration-specific (a raw bucket
    URL, a CDN in front of it, a custom domain, etc.), so it's supplied
    directly rather than the app trying to guess it from bucket name + region.
+
+**Cloudinary setup (only for `STORAGE_PROVIDER=cloudinary`):**
+
+1. `CLOUDINARY_CLOUD_NAME`/`CLOUDINARY_API_KEY`/`CLOUDINARY_API_SECRET` come
+   straight from the Cloudinary dashboard's Account Details — no bucket,
+   region, or endpoint to configure.
+2. Uploaded assets are public to read by default under Cloudinary's own
+   `secure_url` — no separate "make it public" step like the S3 bucket
+   policy above.
+3. No `S3_PUBLIC_URL_BASE`-equivalent to set: `CloudinaryStorageProvider`
+   stores whatever `secure_url` the upload API returns directly, which is
+   already a complete, publicly-reachable HTTPS URL.
+4. If this key/secret pair is ever exposed (committed, pasted somewhere
+   public, etc.), regenerate it from the Cloudinary dashboard immediately —
+   there's no equivalent of scoping an S3 key to one bucket; a Cloudinary
+   API key/secret pair has full account access.
 
 Local development is completely unaffected — `STORAGE_PROVIDER` unset (or
 `local`) keeps using `LocalStorageProvider`, exactly as before.
