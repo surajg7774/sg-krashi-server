@@ -12,6 +12,7 @@ public record CropListingDetailResponse(
         String slug,
         String description,
         BigDecimal unitPrice,
+        boolean isOrganicCertified,
         int quantityAvailable,
         LocalDate harvestDate,
         CropCategorySummary category,

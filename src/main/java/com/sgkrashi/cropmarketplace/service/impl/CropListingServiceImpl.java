@@ -71,6 +71,7 @@ public class CropListingServiceImpl implements CropListingService {
                 CropListingSpecifications.hasCropType(filter.cropType()),
                 CropListingSpecifications.priceGreaterThanOrEqual(filter.minPrice()),
                 CropListingSpecifications.priceLessThanOrEqual(filter.maxPrice()),
+                CropListingSpecifications.isOrganicCertified(filter.organicOnly()),
                 CropListingSpecifications.harvestDateFrom(filter.harvestDateFrom()),
                 CropListingSpecifications.harvestDateTo(filter.harvestDateTo()),
                 CropListingSpecifications.nameContains(filter.search()));
@@ -247,6 +248,7 @@ public class CropListingServiceImpl implements CropListingService {
         listing.setQuantityAvailable(request.quantityAvailable());
         listing.setUnitPrice(request.unitPrice());
         listing.setHarvestDate(request.harvestDate());
+        listing.setOrganicCertified(request.isOrganicCertified());
         listing.setActive(request.isActive());
     }
 }

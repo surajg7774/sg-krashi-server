@@ -46,6 +46,9 @@ public class CropListing extends BaseEntity {
     @Column(name = "harvest_date", nullable = false)
     private LocalDate harvestDate;
 
+    @Column(name = "is_organic_certified", nullable = false)
+    private boolean organicCertified;
+
     /** Denormalized from {@code reviews} (Module 12) — see {@code Product.avgRating}'s Javadoc for why. */
     @Column(name = "avg_rating", precision = 3, scale = 2)
     private BigDecimal avgRating;
@@ -115,6 +118,14 @@ public class CropListing extends BaseEntity {
 
     public void setHarvestDate(LocalDate harvestDate) {
         this.harvestDate = harvestDate;
+    }
+
+    public boolean isOrganicCertified() {
+        return organicCertified;
+    }
+
+    public void setOrganicCertified(boolean organicCertified) {
+        this.organicCertified = organicCertified;
     }
 
     public BigDecimal getAvgRating() {

@@ -8,6 +8,7 @@ public record CropListingSummaryResponse(
         String name,
         String slug,
         BigDecimal unitPrice,
+        boolean isOrganicCertified,
         int quantityAvailable,
         LocalDate harvestDate,
         String categoryName,

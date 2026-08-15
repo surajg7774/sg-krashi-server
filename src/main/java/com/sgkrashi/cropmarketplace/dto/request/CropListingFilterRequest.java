@@ -7,6 +7,7 @@ public record CropListingFilterRequest(
         String cropType,
         BigDecimal minPrice,
         BigDecimal maxPrice,
+        Boolean organicOnly,
         LocalDate harvestDateFrom,
         LocalDate harvestDateTo,
         String search,

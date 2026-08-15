@@ -80,6 +80,7 @@ public class FarmerCropListingServiceImpl implements FarmerCropListingService {
                 request.quantityAvailable(),
                 request.unitPrice(),
                 request.harvestDate(),
+                request.isOrganicCertified(),
                 isActive);
     }
 }

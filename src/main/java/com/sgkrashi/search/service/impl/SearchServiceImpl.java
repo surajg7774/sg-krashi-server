@@ -58,7 +58,7 @@ public class SearchServiceImpl implements SearchService {
         PaginatedResponse<ProductSummaryResponse> products = productService.listProducts(
                 new ProductFilterRequest(null, null, null, null, term, 0, RESULTS_PER_TYPE));
         PaginatedResponse<CropListingSummaryResponse> cropListings = cropListingService.listCropListings(
-                new CropListingFilterRequest(null, null, null, null, null, term, 0, RESULTS_PER_TYPE));
+                new CropListingFilterRequest(null, null, null, null, null, null, term, 0, RESULTS_PER_TYPE));
         PaginatedResponse<EquipmentSummaryResponse> equipment = equipmentService.listEquipment(null, term, 0, RESULTS_PER_TYPE);
         PaginatedResponse<StayListingSummaryResponse> stayListings = stayListingService.listStays(term, 0, RESULTS_PER_TYPE);
 

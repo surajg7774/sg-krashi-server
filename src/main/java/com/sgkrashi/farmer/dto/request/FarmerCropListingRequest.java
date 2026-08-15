@@ -37,6 +37,8 @@ public record FarmerCropListingRequest(
         BigDecimal unitPrice,
 
         @NotNull(message = "Harvest date is required")
-        LocalDate harvestDate
+        LocalDate harvestDate,
+
+        boolean isOrganicCertified
 ) {
 }

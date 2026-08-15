@@ -32,6 +32,7 @@ public class CropListingController {
             @RequestParam(required = false) String cropType,
             @RequestParam(required = false) BigDecimal minPrice,
             @RequestParam(required = false) BigDecimal maxPrice,
+            @RequestParam(required = false) Boolean organicOnly,
             @RequestParam(required = false) LocalDate harvestDateFrom,
             @RequestParam(required = false) LocalDate harvestDateTo,
             @RequestParam(required = false) String search,
@@ -39,7 +40,7 @@ public class CropListingController {
             @RequestParam(defaultValue = "20") int size
     ) {
         CropListingFilterRequest filter = new CropListingFilterRequest(
-                cropType, minPrice, maxPrice, harvestDateFrom, harvestDateTo, search, page, size);
+                cropType, minPrice, maxPrice, organicOnly, harvestDateFrom, harvestDateTo, search, page, size);
         var result = cropListingService.listCropListings(filter);
         return ResponseEntity.ok(ApiResponse.success(result, "Crop listings retrieved"));
     }

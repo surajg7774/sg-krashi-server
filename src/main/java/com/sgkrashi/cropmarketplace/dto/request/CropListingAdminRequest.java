@@ -34,6 +34,8 @@ public record CropListingAdminRequest(
         @NotNull(message = "Harvest date is required")
         LocalDate harvestDate,
 
+        boolean isOrganicCertified,
+
         boolean isActive
 ) {
 }

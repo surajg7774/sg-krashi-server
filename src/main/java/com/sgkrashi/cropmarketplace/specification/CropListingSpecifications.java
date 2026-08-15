@@ -47,6 +47,12 @@ public final class CropListingSpecifications {
                 : cb.lessThanOrEqualTo(root.get("unitPrice"), maxPrice);
     }
 
+    public static Specification<CropListing> isOrganicCertified(Boolean organicOnly) {
+        return (root, query, cb) -> (organicOnly == null || !organicOnly)
+                ? null
+                : cb.isTrue(root.get("organicCertified"));
+    }
+
     public static Specification<CropListing> harvestDateFrom(LocalDate from) {
         return (root, query, cb) -> from == null
                 ? null
