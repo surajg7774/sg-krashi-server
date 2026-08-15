@@ -26,6 +26,7 @@ public record CropScanResponse(
         String modelVersion,
         boolean isUncertain,
         boolean cropMismatch,
+        List<GroundingSourceResponse> groundingSources,
         Instant createdAt
 ) {
 }

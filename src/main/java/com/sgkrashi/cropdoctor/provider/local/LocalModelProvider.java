@@ -76,7 +76,8 @@ public class LocalModelProvider implements CropAnalysisProvider {
                         + "categories, with no ability to explain causes or generate a full report — it is the "
                         + "platform's original, lower-detail fallback engine, not the primary one.",
                 PROVIDER_NAME,
-                prediction.modelVersion()
+                prediction.modelVersion(),
+                List.of()
         );
     }
 

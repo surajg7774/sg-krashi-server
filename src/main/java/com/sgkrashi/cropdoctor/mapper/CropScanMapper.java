@@ -5,9 +5,11 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sgkrashi.cropdoctor.dto.response.CropScanResponse;
 import com.sgkrashi.cropdoctor.dto.response.CropScanSummaryResponse;
+import com.sgkrashi.cropdoctor.dto.response.GroundingSourceResponse;
 import com.sgkrashi.cropdoctor.entity.CropScan;
 import com.sgkrashi.cropdoctor.provider.ConfidenceBand;
 import com.sgkrashi.cropdoctor.provider.CropAnalysisResult;
+import com.sgkrashi.cropdoctor.provider.GroundingSource;
 import com.sgkrashi.cropdoctor.provider.HealthStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -64,6 +66,7 @@ public class CropScanMapper {
                 result.providerModelVersion(),
                 scan.isUncertain(),
                 scan.isCropMismatch(),
+                mapGroundingSources(result.groundingSources()),
                 scan.getCreatedAt()
         );
     }
@@ -99,6 +102,7 @@ public class CropScanMapper {
                 result.providerModelVersion(),
                 result.confidenceBand() == ConfidenceBand.LOW,
                 !result.cropMatchesDeclared(),
+                mapGroundingSources(result.groundingSources()),
                 Instant.now()
         );
     }
@@ -128,6 +132,12 @@ public class CropScanMapper {
             }
         }
         return synthesizeFromLegacyFields(scan);
+    }
+
+    private List<GroundingSourceResponse> mapGroundingSources(List<GroundingSource> sources) {
+        return sources.stream()
+                .map(source -> new GroundingSourceResponse(source.title(), source.crop(), source.topic()))
+                .toList();
     }
 
     public List<String> resolveImageUrls(CropScan scan) {
@@ -162,7 +172,8 @@ public class CropScanMapper {
                 List.of(),
                 LEGACY_LIMITATIONS,
                 LEGACY_PROVIDER_NAME,
-                scan.getModelVersion()
+                scan.getModelVersion(),
+                List.of()
         );
     }
 

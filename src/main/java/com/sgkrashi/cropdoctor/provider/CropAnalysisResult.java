@@ -24,6 +24,12 @@ public record CropAnalysisResult(
         List<String> warningSignsToEscalate,
         String limitations,
         String providerName,
-        String providerModelVersion
+        String providerModelVersion,
+        // Empty when no knowledge-base entries were retrieved/used for this
+        // scan (e.g. RetrievalService found nothing for the declared crop,
+        // or the active provider doesn't do retrieval at all) — never
+        // populated with anything that wasn't genuinely included in the
+        // prompt actually sent.
+        List<GroundingSource> groundingSources
 ) {
 }

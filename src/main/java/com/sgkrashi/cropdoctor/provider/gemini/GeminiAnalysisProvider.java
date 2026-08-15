@@ -9,8 +9,11 @@ import com.sgkrashi.cropdoctor.exception.AiServiceUnavailableException;
 import com.sgkrashi.cropdoctor.provider.ConfidenceBand;
 import com.sgkrashi.cropdoctor.provider.CropAnalysisProvider;
 import com.sgkrashi.cropdoctor.provider.CropAnalysisResult;
+import com.sgkrashi.cropdoctor.provider.GroundingSource;
 import com.sgkrashi.cropdoctor.provider.HealthStatus;
 import com.sgkrashi.cropdoctor.provider.Severity;
+import com.sgkrashi.cropdoctor.rag.entity.KnowledgeBaseEntry;
+import com.sgkrashi.cropdoctor.rag.service.RetrievalService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -55,6 +58,11 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
     private static final Logger log = LoggerFactory.getLogger(GeminiAnalysisProvider.class);
     private static final Duration TIMEOUT = Duration.ofSeconds(45);
     private static final String PROVIDER_NAME = "gemini";
+    // Keeps the grounding section a small, focused addition to the prompt
+    // rather than dumping the whole matching slice of the knowledge base in —
+    // RetrievalServiceImpl already orders crop-specific matches first, so
+    // this just bounds how many of those actually get sent.
+    private static final int MAX_GROUNDING_ENTRIES = 4;
     // Plenty for disease/pest detection on a leaf photo — meaningfully cuts
     // upload size and Gemini processing time for a full-resolution phone
     // photo (often 3000px+ on the long side) without losing diagnostic detail.
@@ -73,16 +81,19 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
     private final String model;
     private final ObjectMapper objectMapper;
     private final JsonNode responseSchema;
+    private final RetrievalService retrievalService;
 
     public GeminiAnalysisProvider(
             @Value("${app.gemini.api-key}") String apiKey,
             @Value("${app.gemini.model:gemini-3.6-flash}") String model,
             @Value("${app.gemini.base-url:https://generativelanguage.googleapis.com}") String baseUrl,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            RetrievalService retrievalService
     ) {
         this.apiKey = apiKey;
         this.model = model;
         this.objectMapper = objectMapper;
+        this.retrievalService = retrievalService;
         this.webClient = WebClient.builder().baseUrl(baseUrl).build();
         try {
             this.responseSchema = objectMapper.readTree(GeminiResponseSchema.JSON);
@@ -96,7 +107,14 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
 
     @Override
     public CropAnalysisResult analyze(List<MultipartFile> images, String declaredCrop, String language) {
-        ObjectNode payload = buildPayload(images, declaredCrop, language);
+        // Retrieval happens here, on the declared crop, before Gemini is ever
+        // called — see RetrievalService's Javadoc for why this has to precede
+        // the analysis call rather than follow it. An empty list here (no
+        // knowledge-base coverage for this crop) is expected and fine: the
+        // prompt just omits the grounding section and Gemini answers from its
+        // own general knowledge alone, exactly as it did before this feature.
+        List<KnowledgeBaseEntry> groundingEntries = retrievalService.retrieveForCrop(declaredCrop, MAX_GROUNDING_ENTRIES);
+        ObjectNode payload = buildPayload(images, declaredCrop, language, groundingEntries);
 
         String responseBody;
         try {
@@ -125,12 +143,13 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
             throw new AiServiceUnavailableException("AI service call failed", ex);
         }
 
-        return parseAndValidate(responseBody, declaredCrop);
+        return parseAndValidate(responseBody, declaredCrop, groundingEntries);
     }
 
-    private ObjectNode buildPayload(List<MultipartFile> images, String declaredCrop, String language) {
+    private ObjectNode buildPayload(List<MultipartFile> images, String declaredCrop, String language, List<KnowledgeBaseEntry> groundingEntries) {
         ArrayNode parts = objectMapper.createArrayNode();
-        parts.add(objectMapper.createObjectNode().put("text", buildPrompt(declaredCrop, language, images.size())));
+        parts.add(objectMapper.createObjectNode().put(
+                "text", buildPrompt(declaredCrop, language, images.size(), groundingEntries)));
 
         for (MultipartFile image : images) {
             ObjectNode inlineData = objectMapper.createObjectNode();
@@ -218,7 +237,7 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
     private record ResizedImage(byte[] bytes, String mimeType) {
     }
 
-    private String buildPrompt(String declaredCrop, String languageCode, int imageCount) {
+    private String buildPrompt(String declaredCrop, String languageCode, int imageCount, List<KnowledgeBaseEntry> groundingEntries) {
         String multiImageNote = imageCount > 1
                 ? "You have been given " + imageCount + " photos of the same plant, taken from different "
                 + "angles/distances — use all of them together as evidence for one diagnosis, not separate ones.\n\n"
@@ -232,7 +251,7 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
                 text, rather than silently overriding the user's declaration or silently agreeing with it.
 
                 %s
-
+                %s
                 Be honest about uncertainty. If the image is not a plant, or you cannot make a reliable diagnosis, \
                 say so clearly via healthStatus=UNCERTAIN and confidenceBand=LOW rather than guessing or inventing \
                 a plausible-sounding diagnosis. Do not fabricate specific causes/actions/prevention if you are not \
@@ -241,7 +260,30 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
                 confirm).
 
                 Return your analysis as JSON matching the required schema exactly.""".formatted(
-                multiImageNote, declaredCrop, buildLanguageInstruction(languageCode));
+                multiImageNote, declaredCrop, buildLanguageInstruction(languageCode), buildGroundingSection(groundingEntries));
+    }
+
+    /**
+     * Empty string (no section at all) when retrieval found nothing for this
+     * crop — the honest "no relevant knowledge-base entries" case the RAG
+     * task spec calls for, not a placeholder claiming grounding that isn't
+     * there. When entries exist, they're labeled clearly as reference
+     * material to prefer where relevant, not as a replacement for Gemini's
+     * own visual analysis of the actual photo.
+     */
+    private String buildGroundingSection(List<KnowledgeBaseEntry> groundingEntries) {
+        if (groundingEntries.isEmpty()) {
+            return "";
+        }
+        StringBuilder section = new StringBuilder(
+                "\nReference information from agricultural guidance documents (prefer this content where it's "
+                        + "relevant to what you observe in the photo, but use your own general knowledge to fill any "
+                        + "gaps it doesn't cover — do not claim you consulted any document beyond what's listed here):\n\n");
+        for (KnowledgeBaseEntry entry : groundingEntries) {
+            section.append("### ").append(entry.getTitle()).append(" (").append(entry.getCrop()).append(")\n")
+                    .append(entry.getContent()).append("\n\n");
+        }
+        return section.toString();
     }
 
     /**
@@ -271,7 +313,7 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
                 farmer can show it to an agri-dealer or extension officer unambiguously.""".formatted(languageName);
     }
 
-    private CropAnalysisResult parseAndValidate(String responseBody, String declaredCrop) {
+    private CropAnalysisResult parseAndValidate(String responseBody, String declaredCrop, List<KnowledgeBaseEntry> groundingEntries) {
         GeminiReportJson report;
         try {
             GeminiApiResponse apiResponse = objectMapper.readValue(responseBody, GeminiApiResponse.class);
@@ -315,7 +357,10 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
                 emptyIfNull(report.warningSignsToEscalate()),
                 report.limitations(),
                 PROVIDER_NAME,
-                model
+                model,
+                groundingEntries.stream()
+                        .map(entry -> new GroundingSource(entry.getTitle(), entry.getCrop(), entry.getTopic()))
+                        .toList()
         );
     }
 
