@@ -59,8 +59,27 @@ public class CloudinaryStorageProvider implements StorageProvider {
         }
     }
 
+    /**
+     * Media rows created before this provider became active (local {@code
+     * /uploads/...} paths, or seeded {@code placehold.co} URLs — confirmed
+     * live: most existing product/crop images are still one of these) were
+     * never on Cloudinary at all. {@link #extractPublicId} assumes the
+     * Cloudinary {@code .../upload/v<ver>/<publicId>.<ext>} shape; fed a URL
+     * without {@code /upload/} in it, it slices garbage out of the raw
+     * string instead and would call {@code destroy()} on that nonsense
+     * id — pointless at best, and a real (if astronomically unlikely)
+     * collision risk with an unrelated asset's public_id at worst. Real fix
+     * is to recognize this URL was never Cloudinary's problem and skip the
+     * API call entirely; the DB row deletion below still removes it from
+     * the app.
+     */
+    private static final String CLOUDINARY_HOST_MARKER = "res.cloudinary.com";
+
     @Override
     public void delete(String url) {
+        if (!url.contains(CLOUDINARY_HOST_MARKER)) {
+            return;
+        }
         String publicId = extractPublicId(url);
         try {
             // invalidate=true matters here specifically: destroy() alone only
@@ -71,13 +90,14 @@ public class CloudinaryStorageProvider implements StorageProvider {
             Map<?, ?> result = cloudinary.uploader().destroy(publicId, ObjectUtils.asMap(
                     "resource_type", "image",
                     "invalidate", true));
-            if (!"ok".equals(result.get("result"))) {
-                // Fail loudly rather than silently — destroy() doesn't throw
-                // for a "not found" outcome, it just returns that in the
-                // result map, which a caller ignoring the return value (as
-                // this used to) would never notice.
+            String outcome = (String) result.get("result");
+            // "not found" is an acceptable outcome for a delete, not a
+            // failure — the end state a delete wants (this public_id doesn't
+            // exist on Cloudinary) is already true either way. Only a truly
+            // unexpected outcome should fail loudly here.
+            if (!"ok".equals(outcome) && !"not found".equals(outcome)) {
                 throw new IllegalStateException(
-                        "Cloudinary reported deletion did not succeed for " + publicId + ": " + result.get("result"));
+                        "Cloudinary reported deletion did not succeed for " + publicId + ": " + outcome);
             }
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to delete stored file: " + publicId, ex);
