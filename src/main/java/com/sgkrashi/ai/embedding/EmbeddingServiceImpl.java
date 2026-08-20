@@ -1,8 +1,7 @@
-package com.sgkrashi.cropdoctor.rag.service.impl;
+package com.sgkrashi.ai.embedding;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.sgkrashi.cropdoctor.rag.service.EmbeddingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,20 +18,20 @@ import java.time.Duration;
  * deliberately, because 001 is the one that still supports the {@code
  * taskType} parameter (per Google's own embeddings documentation, {@code
  * gemini-embedding-2} dropped it in favor of describing the task in the
- * prompt text itself). {@code taskType} matters here specifically: Gemini
- * produces measurably different (asymmetric) vectors for {@code
- * RETRIEVAL_DOCUMENT} vs {@code RETRIEVAL_QUERY} text, and this is a
- * genuinely asymmetric retrieval problem — the knowledge base holds
- * multi-paragraph documents, the query is a short crop name. Using the wrong
- * task type for either side is a well-documented way to quietly hurt
- * retrieval quality.
+ * prompt text itself). {@code taskType} matters for both this class's
+ * callers (AI Crop Doctor RAG, the chat assistant's platform knowledge
+ * retrieval): both are asymmetric retrieval problems — the knowledge base
+ * holds multi-paragraph documents, the query is short. Using the wrong task
+ * type for either side is a well-documented way to quietly hurt retrieval
+ * quality.
  *
  * <p>{@code outputDimensionality=768}, not the 3072 default: Matryoshka
  * Representation Learning (which this model uses) means a truncated prefix
- * of the full vector stays meaningfully accurate, and at this knowledge
- * base's scale (a few dozen entries, no vector index) smaller vectors just
- * mean less to store and less arithmetic per cosine-similarity comparison,
- * for a quality tradeoff Google's own docs describe as minimal at this size.
+ * of the full vector stays meaningfully accurate, and at the scale either
+ * caller's knowledge base actually operates at (a few dozen entries, no
+ * vector index) smaller vectors just mean less to store and less arithmetic
+ * per cosine-similarity comparison, for a quality tradeoff Google's own docs
+ * describe as minimal at this size.
  */
 @Service
 public class EmbeddingServiceImpl implements EmbeddingService {

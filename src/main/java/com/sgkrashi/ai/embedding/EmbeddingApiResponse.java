@@ -1,4 +1,4 @@
-package com.sgkrashi.cropdoctor.rag.service.impl;
+package com.sgkrashi.ai.embedding;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 

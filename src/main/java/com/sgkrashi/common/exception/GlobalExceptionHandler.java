@@ -1,6 +1,7 @@
 package com.sgkrashi.common.exception;
 
 import com.sgkrashi.common.dto.ApiErrorResponse;
+import com.sgkrashi.chatassistant.exception.ChatAssistantUnavailableException;
 import com.sgkrashi.cropdoctor.exception.AiQuotaExceededException;
 import com.sgkrashi.cropdoctor.exception.AiServiceUnavailableException;
 import org.slf4j.Logger;
@@ -81,6 +82,13 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleAiServiceUnavailable(AiServiceUnavailableException ex) {
         log.warn("AI Crop Doctor service call failed: {}", ex.getMessage());
         ApiErrorResponse body = ApiErrorResponse.of("AI_SERVICE_UNAVAILABLE", ex.getMessage(), List.of());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+    }
+
+    @ExceptionHandler(ChatAssistantUnavailableException.class)
+    public ResponseEntity<ApiErrorResponse> handleChatAssistantUnavailable(ChatAssistantUnavailableException ex) {
+        log.warn("Chat assistant service call failed: {}", ex.getMessage());
+        ApiErrorResponse body = ApiErrorResponse.of("CHAT_ASSISTANT_UNAVAILABLE", ex.getMessage(), List.of());
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
     }
 

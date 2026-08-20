@@ -73,6 +73,9 @@ public class SecurityConfig {
             // semantic search debug endpoint actually worked unauthenticated.
             "/api/v1/ai/crop-doctor/knowledge-base",
             "/api/v1/ai/crop-doctor/knowledge-base/**",
+            // Chat assistant's platform-knowledge debug/transparency search —
+            // same reasoning as the crop-doctor knowledge-base endpoints above.
+            "/api/v1/chat/knowledge-base/**",
             // Recommendation System — a first-time visitor sees these too, no
             // login required. /for-you is deliberately NOT here (see
             // RecommendationController's Javadoc) since it reads the caller's
@@ -87,7 +90,13 @@ public class SecurityConfig {
     // rule below, since those are the "save/history/download" actions that
     // still require login (Guest Access refinement).
     private static final String[] PUBLIC_POST_ENDPOINTS = {
-            "/api/v1/ai/crop-doctor/analyze"
+            "/api/v1/ai/crop-doctor/analyze",
+            // Chat assistant — Guests and Customers both chat (see
+            // ChatController's Javadoc); GET /chat/sessions/{id} is
+            // deliberately NOT here, only a logged-in owner can retrieve a
+            // past session.
+            "/api/v1/chat/sessions",
+            "/api/v1/chat/sessions/*/messages"
     };
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;

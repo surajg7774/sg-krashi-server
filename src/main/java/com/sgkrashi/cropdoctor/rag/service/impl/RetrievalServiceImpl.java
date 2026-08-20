@@ -1,9 +1,11 @@
 package com.sgkrashi.cropdoctor.rag.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sgkrashi.ai.embedding.CosineSimilarity;
+import com.sgkrashi.ai.embedding.EmbeddingService;
+import com.sgkrashi.ai.embedding.EmbeddingUnavailableException;
 import com.sgkrashi.cropdoctor.rag.entity.KnowledgeBaseEntry;
 import com.sgkrashi.cropdoctor.rag.repository.KnowledgeBaseRepository;
-import com.sgkrashi.cropdoctor.rag.service.EmbeddingService;
 import com.sgkrashi.cropdoctor.rag.service.RetrievalService;
 import com.sgkrashi.cropdoctor.rag.service.ScoredKnowledgeBaseEntry;
 import org.slf4j.Logger;
@@ -112,7 +114,7 @@ public class RetrievalServiceImpl implements RetrievalService {
 
         return knowledgeBaseRepository.findByIsActiveTrueOrderByCropAscIdAsc().stream()
                 .filter(entry -> entry.getEmbedding() != null)
-                .map(entry -> new ScoredKnowledgeBaseEntry(entry, cosineSimilarity(queryEmbedding, parseEmbedding(entry))))
+                .map(entry -> new ScoredKnowledgeBaseEntry(entry, CosineSimilarity.compute(queryEmbedding, parseEmbedding(entry))))
                 .toList();
     }
 
@@ -134,32 +136,4 @@ public class RetrievalServiceImpl implements RetrievalService {
         }
     }
 
-    /**
-     * cos(theta) between two vectors = (A . B) / (|A| * |B|) — the dot
-     * product of the two vectors divided by the product of their magnitudes
-     * (Euclidean lengths). Ranges from -1 (opposite) to 1 (identical
-     * direction); two embeddings of semantically similar text end up
-     * "pointing the same way" in the embedding space, so a higher value
-     * means more similar meaning, independent of either vector's raw scale.
-     * A zero-length vector (the {@link #parseEmbedding} failure case) can't
-     * be compared meaningfully, so it's scored as dissimilar (0.0) rather
-     * than risking a divide-by-zero.
-     */
-    private double cosineSimilarity(float[] a, float[] b) {
-        if (a.length == 0 || b.length == 0 || a.length != b.length) {
-            return 0.0;
-        }
-        double dotProduct = 0.0;
-        double magnitudeA = 0.0;
-        double magnitudeB = 0.0;
-        for (int i = 0; i < a.length; i++) {
-            dotProduct += a[i] * b[i];
-            magnitudeA += a[i] * a[i];
-            magnitudeB += b[i] * b[i];
-        }
-        if (magnitudeA == 0.0 || magnitudeB == 0.0) {
-            return 0.0;
-        }
-        return dotProduct / (Math.sqrt(magnitudeA) * Math.sqrt(magnitudeB));
-    }
 }

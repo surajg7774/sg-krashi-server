@@ -1,9 +1,9 @@
 package com.sgkrashi.cropdoctor.rag.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sgkrashi.ai.embedding.EmbeddingService;
 import com.sgkrashi.cropdoctor.rag.entity.KnowledgeBaseEntry;
 import com.sgkrashi.cropdoctor.rag.repository.KnowledgeBaseRepository;
-import com.sgkrashi.cropdoctor.rag.service.EmbeddingService;
 import com.sgkrashi.cropdoctor.rag.service.KnowledgeBaseIngestionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
