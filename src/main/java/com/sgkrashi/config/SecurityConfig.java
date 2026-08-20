@@ -76,6 +76,10 @@ public class SecurityConfig {
             // Chat assistant's platform-knowledge debug/transparency search —
             // same reasoning as the crop-doctor knowledge-base endpoints above.
             "/api/v1/chat/knowledge-base/**",
+            // Feature-flag check (CHAT_ASSISTANT_ENABLED) — the frontend needs
+            // this before a user has any reason to authenticate, to decide
+            // whether to render the floating widget at all.
+            "/api/v1/chat/config",
             // Recommendation System — a first-time visitor sees these too, no
             // login required. /for-you is deliberately NOT here (see
             // RecommendationController's Javadoc) since it reads the caller's

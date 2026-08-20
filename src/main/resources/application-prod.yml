@@ -91,6 +91,17 @@ app:
   gemini:
     api-key: ${GEMINI_API_KEY}
     model: ${GEMINI_MODEL:gemini-3.6-flash}
+  chat-assistant:
+    # Kill switch for the AI Chat Assistant specifically — independent of
+    # AI Crop Doctor, since they're separate Gemini quota concerns in
+    # practice even though they share one API key. Defaults to enabled
+    # (unset = true) so this is opt-out, not opt-in — flip
+    # CHAT_ASSISTANT_ENABLED=false in Railway to hide the widget and
+    # short-circuit the endpoints, no redeploy or code change needed either
+    # direction. GET /api/v1/chat/config exposes this value publicly so the
+    # frontend (a separate Vercel deployment with no access to Railway env
+    # vars) can hide the floating button entirely rather than just disabling it.
+    enabled: ${CHAT_ASSISTANT_ENABLED:true}
 
 crop-doctor:
   provider: ${CROP_DOCTOR_PROVIDER:gemini}

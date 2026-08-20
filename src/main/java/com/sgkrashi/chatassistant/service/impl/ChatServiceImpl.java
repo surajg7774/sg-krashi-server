@@ -8,6 +8,7 @@ import com.sgkrashi.chatassistant.dto.response.ChatSessionResponse;
 import com.sgkrashi.chatassistant.entity.ChatMessage;
 import com.sgkrashi.chatassistant.entity.ChatMessageRole;
 import com.sgkrashi.chatassistant.entity.ChatSession;
+import com.sgkrashi.chatassistant.exception.ChatAssistantDisabledException;
 import com.sgkrashi.chatassistant.knowledge.entity.PlatformKnowledgeEntry;
 import com.sgkrashi.chatassistant.knowledge.service.PlatformKnowledgeService;
 import com.sgkrashi.chatassistant.provider.ChatAssistantProvider;
@@ -22,6 +23,7 @@ import com.sgkrashi.inquiry.dto.response.InquiryResponse;
 import com.sgkrashi.inquiry.service.InquiryService;
 import com.sgkrashi.order.dto.response.OrderSummaryResponse;
 import com.sgkrashi.order.service.OrderService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,6 +54,7 @@ public class ChatServiceImpl implements ChatService {
 
     private static final int MAX_GROUNDING_ENTRIES = 4;
     private static final int MAX_PERSONAL_RECORDS = 5;
+    private static final String DISABLED_MESSAGE = "The chat assistant is temporarily unavailable. Please check back later.";
 
     // Deliberately broad/simple (task spec: "keyword-based is fine for V1,
     // doesn't need to be sophisticated") — a false positive here just means
@@ -75,6 +78,7 @@ public class ChatServiceImpl implements ChatService {
     private final OrderService orderService;
     private final BookingService bookingService;
     private final InquiryService inquiryService;
+    private final boolean chatAssistantEnabled;
 
     public ChatServiceImpl(
             ChatSessionRepository chatSessionRepository,
@@ -85,7 +89,8 @@ public class ChatServiceImpl implements ChatService {
             CurrentUserProvider currentUserProvider,
             OrderService orderService,
             BookingService bookingService,
-            InquiryService inquiryService
+            InquiryService inquiryService,
+            @Value("${app.chat-assistant.enabled:true}") boolean chatAssistantEnabled
     ) {
         this.chatSessionRepository = chatSessionRepository;
         this.chatMessageRepository = chatMessageRepository;
@@ -96,11 +101,15 @@ public class ChatServiceImpl implements ChatService {
         this.orderService = orderService;
         this.bookingService = bookingService;
         this.inquiryService = inquiryService;
+        this.chatAssistantEnabled = chatAssistantEnabled;
     }
 
     @Override
     @Transactional
     public ChatSessionResponse createSession() {
+        if (!chatAssistantEnabled) {
+            throw new ChatAssistantDisabledException(DISABLED_MESSAGE);
+        }
         ChatSession session = new ChatSession();
         session.setUserId(currentUserProvider.getCurrentUserIdOrNull());
         ChatSession saved = chatSessionRepository.save(session);
@@ -110,6 +119,9 @@ public class ChatServiceImpl implements ChatService {
     @Override
     @Transactional
     public ChatMessageResponse sendMessage(Long sessionId, String message, String clientIp) {
+        if (!chatAssistantEnabled) {
+            throw new ChatAssistantDisabledException(DISABLED_MESSAGE);
+        }
         ChatSession session = getSessionEntityOrThrow(sessionId);
         Long currentUserId = currentUserProvider.getCurrentUserIdOrNull();
 

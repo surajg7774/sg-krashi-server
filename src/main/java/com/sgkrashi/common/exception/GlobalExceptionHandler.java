@@ -1,6 +1,7 @@
 package com.sgkrashi.common.exception;
 
 import com.sgkrashi.common.dto.ApiErrorResponse;
+import com.sgkrashi.chatassistant.exception.ChatAssistantDisabledException;
 import com.sgkrashi.chatassistant.exception.ChatAssistantUnavailableException;
 import com.sgkrashi.chatassistant.exception.ChatQuotaExceededException;
 import com.sgkrashi.cropdoctor.exception.AiQuotaExceededException;
@@ -83,6 +84,13 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleAiServiceUnavailable(AiServiceUnavailableException ex) {
         log.warn("AI Crop Doctor service call failed: {}", ex.getMessage());
         ApiErrorResponse body = ApiErrorResponse.of("AI_SERVICE_UNAVAILABLE", ex.getMessage(), List.of());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+    }
+
+    @ExceptionHandler(ChatAssistantDisabledException.class)
+    public ResponseEntity<ApiErrorResponse> handleChatAssistantDisabled(ChatAssistantDisabledException ex) {
+        log.warn("Chat assistant is disabled (CHAT_ASSISTANT_ENABLED=false): {}", ex.getMessage());
+        ApiErrorResponse body = ApiErrorResponse.of("CHAT_ASSISTANT_DISABLED", ex.getMessage(), List.of());
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
     }
 

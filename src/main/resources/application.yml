@@ -66,6 +66,8 @@ app:
     # re-enabled.
     service-url: ${AI_SERVICE_URL:http://localhost:8000}
     api-key: ${AI_SERVICE_API_KEY}
+  chat-assistant:
+    enabled: ${CHAT_ASSISTANT_ENABLED:true}
   gemini:
     # No default, same as JWT_SECRET/RAZORPAY_* above — set via
     # application-local.yml. Get a free key at aistudio.google.com/apikey.
