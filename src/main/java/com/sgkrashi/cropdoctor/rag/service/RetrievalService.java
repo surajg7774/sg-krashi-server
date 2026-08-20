@@ -19,4 +19,13 @@ import java.util.List;
 public interface RetrievalService {
 
     List<KnowledgeBaseEntry> retrieveForCrop(String declaredCrop, int maxResults);
+
+    /**
+     * Same semantic search {@link #retrieveForCrop} uses, but returning every
+     * scored candidate (above or below the retrieval threshold) rather than
+     * just the winners with their scores discarded — debug/transparency use
+     * only, backs {@code KnowledgeBaseController}'s search endpoint so
+     * retrieval quality can actually be inspected, not just trusted.
+     */
+    List<ScoredKnowledgeBaseEntry> semanticSearchWithScores(String query, int maxResults);
 }

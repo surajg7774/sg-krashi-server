@@ -10,4 +10,6 @@ public interface KnowledgeBaseRepository extends JpaRepository<KnowledgeBaseEntr
     List<KnowledgeBaseEntry> findByCropIgnoreCaseAndIsActiveTrueOrderByIdAsc(String crop);
 
     List<KnowledgeBaseEntry> findByIsActiveTrueOrderByCropAscIdAsc();
+
+    List<KnowledgeBaseEntry> findByEmbeddingIsNullAndIsActiveTrue();
 }

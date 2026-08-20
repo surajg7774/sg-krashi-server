@@ -1,31 +1,67 @@
 package com.sgkrashi.cropdoctor.rag.service.impl;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sgkrashi.cropdoctor.rag.entity.KnowledgeBaseEntry;
 import com.sgkrashi.cropdoctor.rag.repository.KnowledgeBaseRepository;
+import com.sgkrashi.cropdoctor.rag.service.EmbeddingService;
 import com.sgkrashi.cropdoctor.rag.service.RetrievalService;
+import com.sgkrashi.cropdoctor.rag.service.ScoredKnowledgeBaseEntry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.util.Comparator;
 import java.util.List;
 
 /**
- * Option 1 from the RAG task spec: plain metadata (crop) filtering against
- * MySQL, no embeddings, no vector database. At this knowledge base's real
- * scale (a few dozen curated entries, not the few-hundred-to-low-thousands
- * scale where embedding similarity would start to earn its complexity), an
- * exact crop match is just as legitimate a retrieval strategy and is
- * trivially explainable — there is no ambiguity to resolve with cosine
- * similarity when the query is "give me what's tagged for this crop."
- * Embedding-based semantic retrieval remains a reasonable follow-up (see the
- * task's own section 3) once the knowledge base grows large/varied enough
- * that exact crop tags stop being a precise enough filter on their own.
+ * V2 of retrieval: embedding-based cosine similarity as the primary path,
+ * with the original V1 exact-crop-match as a fallback — never the other way
+ * around, and never both blended into one ranked list, so which path
+ * actually served a given scan stays unambiguous.
+ *
+ * <p>Semantic search fixes V1's one documented gap: an exact crop-tag match
+ * can't connect "Chickpea" to a "Chana" entry, or "Corn" to "Maize", even
+ * though they're the same crop under a different name. Comparing embeddings
+ * of the query text against embeddings of each entry's content does, without
+ * needing a synonym table someone has to maintain.
+ *
+ * <p>Falls back to {@link #metadataMatch} when: the embedding API call fails
+ * (network/quota/timeout — {@link EmbeddingUnavailableException}, caught
+ * here so a Gemini embedding outage degrades a scan's grounding quality, not
+ * the scan itself), no entry has a stored embedding yet (mid-backfill, or a
+ * freshly-added entry whose own embedding generation failed), or nothing
+ * clears {@link #SIMILARITY_THRESHOLD}. This mirrors exactly how the rest of
+ * this feature already treats "no relevant knowledge" — proceed without
+ * grounding (or, here, with the cruder fallback) rather than forcing a
+ * low-quality match through.
  */
 @Service
 public class RetrievalServiceImpl implements RetrievalService {
 
-    private final KnowledgeBaseRepository knowledgeBaseRepository;
+    private static final Logger log = LoggerFactory.getLogger(RetrievalServiceImpl.class);
 
-    public RetrievalServiceImpl(KnowledgeBaseRepository knowledgeBaseRepository) {
+    // Chosen empirically against this project's real 28-entry knowledge base
+    // (gemini-embedding-001, taskType RETRIEVAL_DOCUMENT/RETRIEVAL_QUERY,
+    // 768 dimensions): genuinely-related pairs (e.g. "Chickpea" query against
+    // the "Chana" entries, "Corn" against "Maize") scored consistently above
+    // ~0.6, while unrelated crop/entry pairs scored well below that. Set
+    // here with headroom under the observed "related" floor rather than
+    // exactly on it, so a slightly-worded-differently-but-still-relevant
+    // query doesn't get cut off by an overly tight threshold.
+    private static final double SIMILARITY_THRESHOLD = 0.55;
+
+    private final KnowledgeBaseRepository knowledgeBaseRepository;
+    private final EmbeddingService embeddingService;
+    private final ObjectMapper objectMapper;
+
+    public RetrievalServiceImpl(
+            KnowledgeBaseRepository knowledgeBaseRepository,
+            EmbeddingService embeddingService,
+            ObjectMapper objectMapper
+    ) {
         this.knowledgeBaseRepository = knowledgeBaseRepository;
+        this.embeddingService = embeddingService;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -33,8 +69,92 @@ public class RetrievalServiceImpl implements RetrievalService {
         if (declaredCrop == null || declaredCrop.isBlank()) {
             return List.of();
         }
+        String query = declaredCrop.trim();
+
+        List<ScoredKnowledgeBaseEntry> scored = scoreAllEntries(query);
+        List<KnowledgeBaseEntry> semanticMatches = scored.stream()
+                .filter(candidate -> candidate.similarity() >= SIMILARITY_THRESHOLD)
+                .sorted(Comparator.comparingDouble(ScoredKnowledgeBaseEntry::similarity).reversed())
+                .limit(maxResults)
+                .map(ScoredKnowledgeBaseEntry::entry)
+                .toList();
+        if (!semanticMatches.isEmpty()) {
+            return semanticMatches;
+        }
+        return metadataMatch(query, maxResults);
+    }
+
+    @Override
+    public List<ScoredKnowledgeBaseEntry> semanticSearchWithScores(String query, int maxResults) {
+        if (query == null || query.isBlank()) {
+            return List.of();
+        }
+        return scoreAllEntries(query.trim()).stream()
+                .sorted(Comparator.comparingDouble(ScoredKnowledgeBaseEntry::similarity).reversed())
+                .limit(maxResults)
+                .toList();
+    }
+
+    /** Every active, embedded entry scored against {@code query} — unfiltered, unsorted; callers apply their own threshold/ordering/limit. */
+    private List<ScoredKnowledgeBaseEntry> scoreAllEntries(String query) {
+        float[] queryEmbedding;
+        try {
+            queryEmbedding = embeddingService.embedQuery(query);
+        } catch (EmbeddingUnavailableException ex) {
+            log.warn("Semantic retrieval unavailable, falling back to metadata match: {}", ex.getMessage());
+            return List.of();
+        }
+
+        return knowledgeBaseRepository.findByIsActiveTrueOrderByCropAscIdAsc().stream()
+                .filter(entry -> entry.getEmbedding() != null)
+                .map(entry -> new ScoredKnowledgeBaseEntry(entry, cosineSimilarity(queryEmbedding, parseEmbedding(entry))))
+                .toList();
+    }
+
+    private List<KnowledgeBaseEntry> metadataMatch(String declaredCrop, int maxResults) {
         List<KnowledgeBaseEntry> matches =
-                knowledgeBaseRepository.findByCropIgnoreCaseAndIsActiveTrueOrderByIdAsc(declaredCrop.trim());
+                knowledgeBaseRepository.findByCropIgnoreCaseAndIsActiveTrueOrderByIdAsc(declaredCrop);
         return matches.size() > maxResults ? matches.subList(0, maxResults) : matches;
+    }
+
+    private float[] parseEmbedding(KnowledgeBaseEntry entry) {
+        try {
+            return objectMapper.readValue(entry.getEmbedding(), float[].class);
+        } catch (Exception ex) {
+            // Malformed stored JSON should never happen (only this codebase
+            // ever writes this column), but a scan is not the place to find
+            // out — treat it the same as "no embedding" rather than throwing.
+            log.warn("Could not parse stored embedding for knowledge base entry {}", entry.getId(), ex);
+            return new float[0];
+        }
+    }
+
+    /**
+     * cos(theta) between two vectors = (A . B) / (|A| * |B|) — the dot
+     * product of the two vectors divided by the product of their magnitudes
+     * (Euclidean lengths). Ranges from -1 (opposite) to 1 (identical
+     * direction); two embeddings of semantically similar text end up
+     * "pointing the same way" in the embedding space, so a higher value
+     * means more similar meaning, independent of either vector's raw scale.
+     * A zero-length vector (the {@link #parseEmbedding} failure case) can't
+     * be compared meaningfully, so it's scored as dissimilar (0.0) rather
+     * than risking a divide-by-zero.
+     */
+    private double cosineSimilarity(float[] a, float[] b) {
+        if (a.length == 0 || b.length == 0 || a.length != b.length) {
+            return 0.0;
+        }
+        double dotProduct = 0.0;
+        double magnitudeA = 0.0;
+        double magnitudeB = 0.0;
+        for (int i = 0; i < a.length; i++) {
+            dotProduct += a[i] * b[i];
+            magnitudeA += a[i] * a[i];
+            magnitudeB += b[i] * b[i];
+        }
+        if (magnitudeA == 0.0 || magnitudeB == 0.0) {
+            return 0.0;
+        }
+        return dotProduct / (Math.sqrt(magnitudeA) * Math.sqrt(magnitudeB));
     }
 }

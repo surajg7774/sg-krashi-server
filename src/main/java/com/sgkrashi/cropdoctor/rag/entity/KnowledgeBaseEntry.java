@@ -29,6 +29,18 @@ public class KnowledgeBaseEntry extends BaseEntity {
     @Column(name = "content", nullable = false, columnDefinition = "TEXT")
     private String content;
 
+    // JSON-serialized float array (Gemini's embedContent output), NOT a
+    // native MySQL vector type — this project's MySQL version has none, and
+    // at this knowledge base's scale (a few dozen entries) comparing stored
+    // arrays in the application layer is simpler and fast enough that a
+    // vector column/index would be over-engineering. Null until
+    // KnowledgeBaseEmbeddingBackfillRunner or KnowledgeBaseIngestionServiceImpl
+    // populates it — RetrievalServiceImpl skips entries with no embedding
+    // when doing semantic search, falling back to the metadata-match path
+    // if that leaves nothing to compare against.
+    @Column(name = "embedding", columnDefinition = "JSON")
+    private String embedding;
+
     @Column(name = "source", nullable = false, length = 300)
     private String source;
 
@@ -65,6 +77,14 @@ public class KnowledgeBaseEntry extends BaseEntity {
 
     public void setContent(String content) {
         this.content = content;
+    }
+
+    public String getEmbedding() {
+        return embedding;
+    }
+
+    public void setEmbedding(String embedding) {
+        this.embedding = embedding;
     }
 
     public String getSource() {

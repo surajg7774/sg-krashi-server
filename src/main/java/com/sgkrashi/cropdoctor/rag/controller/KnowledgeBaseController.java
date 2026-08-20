@@ -2,8 +2,11 @@ package com.sgkrashi.cropdoctor.rag.controller;
 
 import com.sgkrashi.common.dto.ApiResponse;
 import com.sgkrashi.cropdoctor.rag.dto.response.KnowledgeBaseEntryResponse;
+import com.sgkrashi.cropdoctor.rag.dto.response.KnowledgeBaseSearchResultResponse;
 import com.sgkrashi.cropdoctor.rag.entity.KnowledgeBaseEntry;
 import com.sgkrashi.cropdoctor.rag.service.KnowledgeBaseIngestionService;
+import com.sgkrashi.cropdoctor.rag.service.RetrievalService;
+import com.sgkrashi.cropdoctor.rag.service.ScoredKnowledgeBaseEntry;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -25,10 +28,14 @@ import java.util.List;
 @RequestMapping("/api/v1/ai/crop-doctor/knowledge-base")
 public class KnowledgeBaseController {
 
-    private final KnowledgeBaseIngestionService knowledgeBaseIngestionService;
+    private static final int DEBUG_SEARCH_RESULTS = 28;
 
-    public KnowledgeBaseController(KnowledgeBaseIngestionService knowledgeBaseIngestionService) {
+    private final KnowledgeBaseIngestionService knowledgeBaseIngestionService;
+    private final RetrievalService retrievalService;
+
+    public KnowledgeBaseController(KnowledgeBaseIngestionService knowledgeBaseIngestionService, RetrievalService retrievalService) {
         this.knowledgeBaseIngestionService = knowledgeBaseIngestionService;
+        this.retrievalService = retrievalService;
     }
 
     @GetMapping
@@ -42,8 +49,30 @@ public class KnowledgeBaseController {
         return ResponseEntity.ok(ApiResponse.success(entries, "Knowledge base entries retrieved"));
     }
 
+    /**
+     * Semantic search with raw similarity scores attached — every scored
+     * candidate, not just what clears {@code RetrievalServiceImpl}'s
+     * threshold, so retrieval quality can actually be inspected (e.g.
+     * confirming "Chickpea" scores highly against the "Chana" entries)
+     * rather than trusted blind. Returns every active, embedded entry sorted
+     * by score, capped generously since this knowledge base only has ~28
+     * entries total.
+     */
+    @GetMapping("/search")
+    public ResponseEntity<ApiResponse<List<KnowledgeBaseSearchResultResponse>>> search(@RequestParam String query) {
+        List<KnowledgeBaseSearchResultResponse> results = retrievalService
+                .semanticSearchWithScores(query, DEBUG_SEARCH_RESULTS).stream()
+                .map(this::toSearchResult)
+                .toList();
+        return ResponseEntity.ok(ApiResponse.success(results, "Semantic search results retrieved"));
+    }
+
     private KnowledgeBaseEntryResponse toResponse(KnowledgeBaseEntry entry) {
         return new KnowledgeBaseEntryResponse(
                 entry.getId(), entry.getCrop(), entry.getTopic(), entry.getTitle(), entry.getContent(), entry.getSource());
+    }
+
+    private KnowledgeBaseSearchResultResponse toSearchResult(ScoredKnowledgeBaseEntry scored) {
+        return new KnowledgeBaseSearchResultResponse(toResponse(scored.entry()), scored.similarity());
     }
 }

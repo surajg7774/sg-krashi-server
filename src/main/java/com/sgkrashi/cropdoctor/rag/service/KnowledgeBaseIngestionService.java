@@ -21,4 +21,14 @@ public interface KnowledgeBaseIngestionService {
 
     /** {@code crop}/{@code topic} are optional filters — both null returns every active entry. */
     List<KnowledgeBaseEntry> list(String crop, String topic);
+
+    /**
+     * Generates and stores an embedding for every active entry that doesn't
+     * have one yet — the one-time catch-up for entries seeded before
+     * embedding-based retrieval existed. Called by {@code
+     * KnowledgeBaseEmbeddingBackfillRunner} at application startup; safe to
+     * call repeatedly, since it only ever touches rows with a null {@code
+     * embedding} column.
+     */
+    void backfillMissingEmbeddings();
 }
