@@ -5,9 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sgkrashi.chatassistant.exception.ChatAssistantUnavailableException;
+import com.sgkrashi.chatassistant.exception.ChatQuotaExceededException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -89,6 +91,11 @@ public class GeminiChatProvider implements ChatAssistantProvider {
                     .timeout(TIMEOUT)
                     .block();
         } catch (WebClientResponseException ex) {
+            if (ex.getStatusCode() == HttpStatusCode.valueOf(429)) {
+                log.warn("Gemini chat quota exhausted: {}", ex.getResponseBodyAsString());
+                throw new ChatQuotaExceededException(
+                        "The chat assistant has reached its usage limit for now — please try again later.", ex);
+            }
             log.warn("Gemini chat API returned {} {}: {}", ex.getStatusCode(), ex.getStatusText(), ex.getResponseBodyAsString());
             throw new ChatAssistantUnavailableException("Chat service returned an error response", ex);
         } catch (WebClientRequestException ex) {
