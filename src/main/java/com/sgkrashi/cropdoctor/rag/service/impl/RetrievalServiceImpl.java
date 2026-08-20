@@ -40,15 +40,20 @@ public class RetrievalServiceImpl implements RetrievalService {
 
     private static final Logger log = LoggerFactory.getLogger(RetrievalServiceImpl.class);
 
-    // Chosen empirically against this project's real 28-entry knowledge base
-    // (gemini-embedding-001, taskType RETRIEVAL_DOCUMENT/RETRIEVAL_QUERY,
-    // 768 dimensions): genuinely-related pairs (e.g. "Chickpea" query against
-    // the "Chana" entries, "Corn" against "Maize") scored consistently above
-    // ~0.6, while unrelated crop/entry pairs scored well below that. Set
-    // here with headroom under the observed "related" floor rather than
-    // exactly on it, so a slightly-worded-differently-but-still-relevant
-    // query doesn't get cut off by an overly tight threshold.
-    private static final double SIMILARITY_THRESHOLD = 0.55;
+    // Measured against this project's real 28-entry knowledge base
+    // (gemini-embedding-001, taskType RETRIEVAL_DOCUMENT/RETRIEVAL_QUERY, 768
+    // dimensions) via the /knowledge-base/search debug endpoint before this
+    // was finalized — an initial guess of 0.55 turned out too low. Real
+    // numbers: "Chickpea" scored 0.683-0.698 against the three Chana
+    // entries; "Corn" scored 0.666-0.690 against the three Maize entries;
+    // "Dragonfruit" (nothing in the knowledge base is actually about it)
+    // topped out at 0.573 against its single closest entry. All agricultural
+    // disease/management text sits in a fairly narrow semantic neighborhood
+    // in this embedding space — even unrelated crops score 0.55-0.60 against
+    // each other just from shared vocabulary/structure — so 0.55 let genuine
+    // non-matches through. 0.62 sits with real margin below both matched
+    // clusters and above the unrelated-query ceiling observed here.
+    private static final double SIMILARITY_THRESHOLD = 0.62;
 
     private final KnowledgeBaseRepository knowledgeBaseRepository;
     private final EmbeddingService embeddingService;
