@@ -64,9 +64,15 @@ public class SecurityConfig {
             // even attempt an analysis (Guest Access refinement) — the analyze
             // endpoint itself being public isn't enough on its own.
             "/api/v1/ai/crop-doctor/supported-crops",
-            // RAG debug/transparency endpoint (Section 4.4) — reference content
+            // RAG debug/transparency endpoints (Section 4.4) — reference content
             // only, no user data, same reasoning as supported-crops above.
+            // Wildcarded (not just the bare path) so /knowledge-base/search
+            // is covered too — an earlier exact-match-only version of this
+            // entry left that sub-path falling through to the default
+            // authenticated() rule, a real bug caught while verifying the
+            // semantic search debug endpoint actually worked unauthenticated.
             "/api/v1/ai/crop-doctor/knowledge-base",
+            "/api/v1/ai/crop-doctor/knowledge-base/**",
             // Recommendation System — a first-time visitor sees these too, no
             // login required. /for-you is deliberately NOT here (see
             // RecommendationController's Javadoc) since it reads the caller's
