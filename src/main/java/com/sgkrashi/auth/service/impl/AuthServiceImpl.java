@@ -4,6 +4,7 @@ import com.sgkrashi.auth.dto.request.ForgotPasswordRequest;
 import com.sgkrashi.auth.dto.request.LoginRequest;
 import com.sgkrashi.auth.dto.request.RegisterRequest;
 import com.sgkrashi.auth.dto.request.ResetPasswordRequest;
+import com.sgkrashi.auth.dto.request.VerifyEmailRequest;
 import com.sgkrashi.auth.dto.response.AuthResponse;
 import com.sgkrashi.auth.entity.RefreshToken;
 import com.sgkrashi.auth.entity.Role;
@@ -81,14 +82,79 @@ public class AuthServiceImpl implements AuthService {
     }
 
     /**
-     * Creates a new customer account. Rejects duplicate emails with a clear 409
-     * rather than letting the unique-constraint violation surface as a raw SQL error.
+     * Deliberately does not create a {@code User} row here. Rejects an
+     * already-registered email up front (a clear 409, same as before) so a
+     * verification email is never sent for an address that can't actually
+     * register — but beyond that check, nothing is persisted: the pending
+     * account (name, email, already-hashed password, phone) travels entirely
+     * inside the signed verification token emailed below. See {@link
+     * #verifyEmail} for where the account is actually created — only once
+     * that link is clicked, which is what guarantees every account belongs
+     * to an email its owner actually controls, not just a validly-shaped
+     * string. The password is hashed here (not in verifyEmail) so the
+     * plaintext never has to travel through or be embedded in anything —
+     * the token only ever carries the one-way hash, exactly what would be
+     * stored in the database anyway.
      */
     @Override
     @Transactional
-    public AuthResult register(RegisterRequest request) {
+    public void register(RegisterRequest request) {
         if (userRepository.existsByEmail(request.email())) {
             throw new DuplicateResourceException("An account with this email already exists");
+        }
+
+        String passwordHash = passwordEncoder.encode(request.password());
+        String verificationToken = jwtTokenProvider.generateEmailVerificationToken(
+                request.name(), request.email(), passwordHash, request.phone());
+        String verificationLink = frontendUrl + "/verify-email?token=" + verificationToken;
+        log.info("Registration pending verification for {}. Verification link: {}", request.email(), verificationLink);
+
+        // Transient User, never saved — exists only so NotificationSender's
+        // signature (which reads user.getEmail()/getName()) can be satisfied
+        // before any real account exists to attach the notification to.
+        User pendingUser = new User();
+        pendingUser.setName(request.name());
+        pendingUser.setEmail(request.email());
+
+        Notification transientNotification = new Notification();
+        transientNotification.setTitle("Verify Your SG Krashi Account");
+        transientNotification.setMessage(
+                "Welcome to SG Krashi! Please verify your email address to activate your account:\n\n"
+                        + verificationLink
+                        + "\n\nThis link expires in 24 hours. If you didn't create this account, "
+                        + "you can safely ignore this email.");
+
+        for (NotificationSender sender : notificationSenders) {
+            try {
+                sender.send(transientNotification, pendingUser);
+            } catch (Exception ex) {
+                log.warn("Verification email failed to send via {} for {}: {}",
+                        sender.getClass().getSimpleName(), request.email(), ex.getMessage());
+            }
+        }
+    }
+
+    /**
+     * The only place a self-service {@code User} row actually gets created.
+     * Re-checks {@code existsByEmail} even though {@link #register} already
+     * did — a stale/duplicate verification link (the same email registered
+     * twice, or the link clicked more than once) must not create a second
+     * account or silently log into an existing one under someone else's
+     * current password, so it's rejected outright rather than treated as
+     * "already verified, log them in."
+     */
+    @Override
+    @Transactional
+    public AuthResult verifyEmail(VerifyEmailRequest request) {
+        JwtTokenProvider.PendingRegistration pending;
+        try {
+            pending = jwtTokenProvider.getPendingRegistration(request.token());
+        } catch (JwtException | IllegalArgumentException ex) {
+            throw new InvalidTokenException("Invalid or expired verification link");
+        }
+
+        if (userRepository.existsByEmail(pending.email())) {
+            throw new DuplicateResourceException("This email is already registered — please log in instead");
         }
 
         Role customerRole = roleRepository.findByName(CUSTOMER_ROLE)
@@ -96,10 +162,10 @@ public class AuthServiceImpl implements AuthService {
                         "Required role '" + CUSTOMER_ROLE + "' is missing — check V2__auth_tables.sql seeding"));
 
         User user = new User();
-        user.setName(request.name());
-        user.setEmail(request.email());
-        user.setPasswordHash(passwordEncoder.encode(request.password()));
-        user.setPhone(request.phone());
+        user.setName(pending.name());
+        user.setEmail(pending.email());
+        user.setPasswordHash(pending.passwordHash());
+        user.setPhone(pending.phone());
         user.setRoles(Set.of(customerRole));
         user = userRepository.save(user);
 

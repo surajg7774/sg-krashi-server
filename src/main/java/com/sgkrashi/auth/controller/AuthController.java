@@ -4,6 +4,7 @@ import com.sgkrashi.auth.dto.request.ForgotPasswordRequest;
 import com.sgkrashi.auth.dto.request.LoginRequest;
 import com.sgkrashi.auth.dto.request.RegisterRequest;
 import com.sgkrashi.auth.dto.request.ResetPasswordRequest;
+import com.sgkrashi.auth.dto.request.VerifyEmailRequest;
 import com.sgkrashi.auth.dto.response.AuthResponse;
 import com.sgkrashi.auth.ratelimit.LoginRateLimiter;
 import com.sgkrashi.auth.service.AuthResult;
@@ -46,16 +47,25 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<ApiResponse<AuthResponse>> register(
+    public ResponseEntity<ApiResponse<Void>> register(
             @Valid @RequestBody RegisterRequest request,
-            HttpServletRequest servletRequest,
-            HttpServletResponse servletResponse
+            HttpServletRequest servletRequest
     ) {
         enforceRateLimit(servletRequest);
-        AuthResult result = authService.register(request);
+        authService.register(request);
+        return ResponseEntity.ok(ApiResponse.success(
+                null, "Please check your email to verify your account and finish creating it"));
+    }
+
+    @PostMapping("/verify-email")
+    public ResponseEntity<ApiResponse<AuthResponse>> verifyEmail(
+            @Valid @RequestBody VerifyEmailRequest request,
+            HttpServletResponse servletResponse
+    ) {
+        AuthResult result = authService.verifyEmail(request);
         setRefreshCookie(servletResponse, result.rawRefreshToken());
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success(result.response(), "Registration successful"));
+                .body(ApiResponse.success(result.response(), "Account verified and created successfully"));
     }
 
     @PostMapping("/login")

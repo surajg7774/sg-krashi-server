@@ -25,8 +25,23 @@ public class JwtTokenProvider {
 
     private static final long ACCESS_TOKEN_TTL_MINUTES = 15;
     private static final long RESET_TOKEN_TTL_MINUTES = 30;
-    private static final String RESET_TOKEN_PURPOSE_CLAIM = "purpose";
+    // Shared by both single-purpose token types below (reset and email
+    // verification) — same claim key, different value, so either token is
+    // rejected outright if handed to the wrong verb (getResetTokenEmail
+    // would reject an email-verification token here, and vice versa).
+    private static final String PURPOSE_CLAIM = "purpose";
     private static final String RESET_TOKEN_PURPOSE_VALUE = "password-reset";
+
+    // Longer-lived than the reset token on purpose: a password reset is
+    // usually acted on right away (the user is mid-"I'm locked out"), but
+    // someone registering may not check their inbox for a while — 24 hours
+    // gives real headroom before they'd need to just submit the form again.
+    private static final long EMAIL_VERIFICATION_TOKEN_TTL_MINUTES = 24 * 60;
+    private static final String EMAIL_VERIFICATION_PURPOSE_VALUE = "email-verification";
+    private static final String CLAIM_NAME = "name";
+    private static final String CLAIM_EMAIL = "email";
+    private static final String CLAIM_PASSWORD_HASH = "passwordHash";
+    private static final String CLAIM_PHONE = "phone";
 
     private final SecretKey signingKey;
 
@@ -88,7 +103,7 @@ public class JwtTokenProvider {
         Instant now = Instant.now();
         return Jwts.builder()
                 .subject(email)
-                .claim(RESET_TOKEN_PURPOSE_CLAIM, RESET_TOKEN_PURPOSE_VALUE)
+                .claim(PURPOSE_CLAIM, RESET_TOKEN_PURPOSE_VALUE)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusSeconds(RESET_TOKEN_TTL_MINUTES * 60)))
                 .signWith(signingKey)
@@ -100,9 +115,54 @@ public class JwtTokenProvider {
      */
     public String getResetTokenEmail(String token) {
         Claims claims = parseClaims(token);
-        if (!RESET_TOKEN_PURPOSE_VALUE.equals(claims.get(RESET_TOKEN_PURPOSE_CLAIM, String.class))) {
+        if (!RESET_TOKEN_PURPOSE_VALUE.equals(claims.get(PURPOSE_CLAIM, String.class))) {
             throw new JwtException("Token is not a password-reset token");
         }
         return claims.getSubject();
+    }
+
+    /**
+     * Generates the token a "verify your email" link carries — the pending
+     * account's data lives entirely in the token's claims, not in any
+     * database row, which is what makes the whole flow work: no {@code
+     * User} exists at all until this token comes back validated (see {@code
+     * AuthServiceImpl#verifyEmail}). {@code passwordHash} is the already-bcrypt-hashed
+     * value, never the plaintext password — safe to embed in a signed token
+     * the same way it's safe to store in the database, since it's a one-way
+     * hash either way.
+     */
+    public String generateEmailVerificationToken(String name, String email, String passwordHash, String phone) {
+        Instant now = Instant.now();
+        var builder = Jwts.builder()
+                .subject(email)
+                .claim(PURPOSE_CLAIM, EMAIL_VERIFICATION_PURPOSE_VALUE)
+                .claim(CLAIM_NAME, name)
+                .claim(CLAIM_EMAIL, email)
+                .claim(CLAIM_PASSWORD_HASH, passwordHash)
+                .issuedAt(Date.from(now))
+                .expiration(Date.from(now.plusSeconds(EMAIL_VERIFICATION_TOKEN_TTL_MINUTES * 60)));
+        if (phone != null) {
+            builder.claim(CLAIM_PHONE, phone);
+        }
+        return builder.signWith(signingKey).compact();
+    }
+
+    /** Everything {@code AuthServiceImpl#verifyEmail} needs to actually create the account — extracted from the token's claims, never trusted from the request otherwise. */
+    public record PendingRegistration(String name, String email, String passwordHash, String phone) {
+    }
+
+    /**
+     * @throws JwtException if the token is malformed, expired, or not an email-verification token
+     */
+    public PendingRegistration getPendingRegistration(String token) {
+        Claims claims = parseClaims(token);
+        if (!EMAIL_VERIFICATION_PURPOSE_VALUE.equals(claims.get(PURPOSE_CLAIM, String.class))) {
+            throw new JwtException("Token is not an email-verification token");
+        }
+        return new PendingRegistration(
+                claims.get(CLAIM_NAME, String.class),
+                claims.get(CLAIM_EMAIL, String.class),
+                claims.get(CLAIM_PASSWORD_HASH, String.class),
+                claims.get(CLAIM_PHONE, String.class));
     }
 }
