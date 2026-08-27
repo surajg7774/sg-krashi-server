@@ -20,7 +20,6 @@ import com.sgkrashi.common.exception.DuplicateResourceException;
 import com.sgkrashi.common.exception.InvalidTokenException;
 import com.sgkrashi.notification.entity.Notification;
 import com.sgkrashi.notification.sender.NotificationSender;
-import io.jsonwebtoken.JwtException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -149,7 +148,11 @@ public class AuthServiceImpl implements AuthService {
         JwtTokenProvider.PendingRegistration pending;
         try {
             pending = jwtTokenProvider.getPendingRegistration(request.token());
-        } catch (JwtException | IllegalArgumentException ex) {
+        } catch (Exception ex) {
+            // See resetPassword's identical catch for why this is Exception,
+            // not just JwtException/IllegalArgumentException — found live: a
+            // malformed, non-JWT-shaped token surfaced as a raw 500 with the
+            // narrower catch.
             throw new InvalidTokenException("Invalid or expired verification link");
         }
 
@@ -288,7 +291,15 @@ public class AuthServiceImpl implements AuthService {
         String email;
         try {
             email = jwtTokenProvider.getResetTokenEmail(request.token());
-        } catch (JwtException | IllegalArgumentException ex) {
+        } catch (Exception ex) {
+            // Catches more than JwtException/IllegalArgumentException on
+            // purpose — a garbage, non-JWT-shaped token (found live: a
+            // plain string like "bad" with no dots) throws a different
+            // exception type further down in the JJWT parsing chain than
+            // the two types this used to catch, which surfaced as a raw 500
+            // instead of a clean "invalid token" response. Any parse
+            // failure here means the same thing to the caller regardless of
+            // its exact type.
             throw new InvalidTokenException("Invalid or expired reset token");
         }
 
