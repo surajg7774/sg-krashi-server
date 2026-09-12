@@ -30,6 +30,7 @@ import com.sgkrashi.farmstay.repository.StayListingRepository;
 import com.sgkrashi.media.entity.MediaAsset;
 import com.sgkrashi.media.repository.MediaAssetRepository;
 import com.sgkrashi.notification.event.BookingCancelledEvent;
+import com.sgkrashi.notification.event.BookingCompletedEvent;
 import com.sgkrashi.notification.event.BookingConfirmedEvent;
 import com.sgkrashi.notification.event.PaymentFailedEvent;
 import com.sgkrashi.notification.event.RefundProcessedEvent;
@@ -335,6 +336,23 @@ public class BookingServiceImpl implements BookingService {
         eventPublisher.publishEvent(new RefundProcessedEvent(PAYABLE_TYPE_BOOKING, booking.getId(), booking.getUserId(), booking.getTotalPrice()));
     }
 
+    /**
+     * Shared by {@link #updateBookingStatus}'s admin-override path and the
+     * daily {@code BookingCompletionJob} — see this method's Javadoc on
+     * {@code BookingService} for why there's exactly one path.
+     */
+    @Override
+    @Transactional
+    public void markCompleted(Long bookingId) {
+        Booking booking = getBookingEntityOrThrow(bookingId);
+        if (booking.getStatus() == BookingStatus.COMPLETED) {
+            return;
+        }
+        booking.setStatus(BookingStatus.COMPLETED);
+        Booking saved = bookingRepository.save(booking);
+        eventPublisher.publishEvent(new BookingCompletedEvent(saved.getId(), saved.getUserId()));
+    }
+
     @Override
     public PaginatedResponse<AdminBookingResponse> listBookingsForAdmin(
             BookingStatus status, Long userId, Instant dateFrom, Instant dateTo, int page, int size
@@ -382,15 +400,17 @@ public class BookingServiceImpl implements BookingService {
      * {@link #cancelBooking}). CANCELLED and COMPLETED are terminal: once
      * reached, no further admin status change is accepted (only notes).
      *
-     * <p>CONFIRMED and CANCELLED delegate to {@link #markConfirmed}/{@link
-     * #adminCancel} so the customer actually gets notified — this used to set
-     * {@code status} directly with no event, unlike the payment-webhook
-     * (CONFIRMED) and self-service (CANCELLED) paths for the exact same
-     * transitions. COMPLETED and PENDING_PAYMENT are left as a direct status
-     * set: there's no existing notification copy or event for "trip
-     * completed" anywhere in the system yet, and the task this follows didn't
-     * call for one — this only wires up the two transitions a customer is
-     * already told about elsewhere.
+     * <p>CONFIRMED, CANCELLED, and COMPLETED all delegate to {@link
+     * #markConfirmed}/{@link #adminCancel}/{@link #markCompleted} so the
+     * customer actually gets notified — this used to set {@code status}
+     * directly with no event for COMPLETED (and, before an earlier fix, for
+     * CONFIRMED/CANCELLED too). COMPLETED is now also reached automatically
+     * by the daily {@code BookingCompletionJob}; this admin path is a manual
+     * override for the same transition, sharing {@link #markCompleted} so
+     * there's exactly one notification code path regardless of trigger.
+     * PENDING_PAYMENT is left as a direct status set: it's not a real
+     * admin-facing target (nothing offers it in the UI) and has no
+     * notification of its own.
      */
     @Override
     @Transactional
@@ -410,6 +430,8 @@ public class BookingServiceImpl implements BookingService {
                 markConfirmed(bookingId);
             } else if (newStatus == BookingStatus.CANCELLED) {
                 adminCancel(bookingId);
+            } else if (newStatus == BookingStatus.COMPLETED) {
+                markCompleted(bookingId);
             } else {
                 Booking toUpdate = getBookingEntityOrThrow(bookingId);
                 toUpdate.setStatus(newStatus);

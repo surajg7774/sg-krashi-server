@@ -91,11 +91,10 @@ public interface BookingRepository extends JpaRepository<Booking, Long>, JpaSpec
 
     /**
      * Candidate bookings for Module 12's review eligibility check. {@code
-     * COMPLETED} is included for correctness, but nothing in this codebase
-     * currently transitions a booking to it (see {@code
-     * ReviewEligibilityServiceImpl}'s Javadoc) — so in practice this matches
-     * {@code CONFIRMED} bookings whose {@code endDate} has already passed,
-     * treated as equivalent to "completed" for review purposes.
+     * COMPLETED} is the real, primary signal — set by {@code
+     * BookingCompletionJob} once {@code endDate} has passed — with the
+     * {@code CONFIRMED and endDate < today} half kept only as a same-day
+     * fallback; see {@link #findEligibleBookingById}'s Javadoc for why.
      */
     @Query("""
             select b from Booking b
@@ -113,7 +112,15 @@ public interface BookingRepository extends JpaRepository<Booking, Long>, JpaSpec
             @Param("today") LocalDate today
     );
 
-    /** Same eligibility rule as {@link #findEligibleForReview}, scoped to one specific claimed booking — used to re-verify a review submission's claimed transaction. */
+    /**
+     * The {@code CONFIRMED and endDate < today} half of this OR is a
+     * deliberately-kept fallback, not a leftover: {@code BookingCompletionJob}
+     * runs once daily, so a booking whose {@code endDate} passed only hours
+     * ago may not have been flipped to COMPLETED yet by the time a customer
+     * tries to review it same-day. Without this fallback that customer would
+     * see "not eligible" for up to ~24h for no real reason. COMPLETED is the
+     * primary, real signal; this proxy only closes that same-day gap.
+     */
     @Query("""
             select b from Booking b
             where b.id = :bookingId
@@ -138,16 +145,12 @@ public interface BookingRepository extends JpaRepository<Booking, Long>, JpaSpec
     long countByStatusAndStartDateGreaterThanEqual(BookingStatus status, LocalDate startDate);
 
     /**
-     * Admin dashboard KPI — reuses the exact "CONFIRMED + endDate already
-     * passed" proxy from {@link #findEligibleForReview} (Module 12), since
-     * {@code BookingStatus.COMPLETED} is still never set by any code path.
-     * Same gap, same workaround, applied consistently rather than invented
-     * fresh here.
+     * {@code BookingCompletionJob}'s daily query — every still-CONFIRMED
+     * booking whose stay/rental has already ended, regardless of when it
+     * ended. Naturally idempotent: once a row is transitioned to COMPLETED it
+     * no longer matches {@code status = CONFIRMED}, so running the job twice
+     * (or against a booking a previous run already handled) finds nothing to
+     * redo.
      */
-    @Query("""
-            select count(b) from Booking b
-            where b.status = com.sgkrashi.booking.entity.BookingStatus.CONFIRMED
-              and b.endDate < :today
-            """)
-    long countCompletedByProxy(@Param("today") LocalDate today);
+    List<Booking> findByStatusAndEndDateBefore(BookingStatus status, LocalDate endDate);
 }

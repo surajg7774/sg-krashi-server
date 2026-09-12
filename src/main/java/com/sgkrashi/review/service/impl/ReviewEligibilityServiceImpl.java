@@ -20,28 +20,24 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * <h2>The two gaps this module found, and how they're handled</h2>
+ * <h2>Real DELIVERED/COMPLETED states, not the old proxies</h2>
  *
- * <p><b>Orders (Product/CropListing):</b> Module 6/7's {@code OrderStatus}
- * enum is {@code PENDING_PAYMENT, CONFIRMED, PAYMENT_FAILED} — there is no
- * {@code DELIVERED} state, or any fulfillment/shipping tracking at all.
- * {@code CONFIRMED} is the terminal successful state as this codebase
- * currently stands. Rather than inventing a {@code DELIVERED} constant that
- * nothing would ever set (a half-finished status nobody transitions to),
- * this service treats a {@code CONFIRMED} order as the review-eligible
- * state. A real "delivered" distinction belongs to a future fulfillment-
- * tracking module, not a speculative addition here — user-facing copy for
- * this reflects that ("once your order is complete", not "delivered").
+ * <p><b>Orders (Product/CropListing):</b> used to treat {@code CONFIRMED} as
+ * review-eligible, since {@code OrderStatus} had no {@code DELIVERED} state
+ * at all. Now that {@code DELIVERED} is real and Admin-settable, review
+ * eligibility requires it — a customer can review a product/crop-listing
+ * purchase once it's genuinely marked delivered, not merely paid-for.
  *
- * <p><b>Bookings (Equipment/Stay):</b> {@code BookingStatus.COMPLETED} exists
- * as an enum constant and is defensively checked in {@code
- * BookingServiceImpl.cancelBooking}, but nothing anywhere ever sets a
- * booking's status to it — no scheduled job, no manual transition. Per this
- * module's own brief, the pragmatic fix is: a {@code CONFIRMED} booking whose
- * {@code endDate} has already passed is treated as equivalent to {@code
- * COMPLETED} for review-eligibility purposes only. This does not retroactively
- * fix {@code BookingStatus.COMPLETED} being otherwise unreachable — that's a
- * gap for a future module (e.g. a stay/rental completion job) to close.
+ * <p><b>Bookings (Equipment/Stay):</b> {@code BookingStatus.COMPLETED} is now
+ * actually reachable — {@code BookingCompletionJob} transitions a
+ * {@code CONFIRMED} booking to it once {@code endDate} has passed. This
+ * service now checks {@code COMPLETED} as the primary signal. The old
+ * "{@code CONFIRMED} and {@code endDate} passed" proxy is deliberately KEPT,
+ * but demoted to a documented fallback for the ~24h window between a
+ * booking's {@code endDate} passing and the next daily job run — see {@code
+ * BookingRepository.findEligibleBookingById}'s Javadoc for the full
+ * reasoning. It is not a second, competing signal: once the job runs, the
+ * booking is COMPLETED and the fallback clause simply stops matching it.
  */
 @Service
 public class ReviewEligibilityServiceImpl implements ReviewEligibilityService {
@@ -69,13 +65,13 @@ public class ReviewEligibilityServiceImpl implements ReviewEligibilityService {
 
         if (isOrderBacked(targetType)) {
             List<OrderItem> candidates = orderItemRepository.findEligibleForReview(
-                    userId, OrderStatus.CONFIRMED, toItemType(targetType), targetId);
+                    userId, OrderStatus.DELIVERED, toItemType(targetType), targetId);
             return candidates.stream()
                     .filter(item -> !reviewRepository.existsByOrderItemId(item.getId()))
                     .findFirst()
                     .map(item -> EligibilityResponse.eligible(item.getId(), null))
                     .orElseGet(() -> candidates.isEmpty()
-                            ? EligibilityResponse.notEligible("You can review this once your order for it is complete.")
+                            ? EligibilityResponse.notEligible("You can review this once your order has been delivered.")
                             : EligibilityResponse.notEligible("You've already reviewed this."));
         }
 
@@ -99,7 +95,7 @@ public class ReviewEligibilityServiceImpl implements ReviewEligibilityService {
                 throw new BusinessRuleException("orderItemId is required to review a " + targetType);
             }
             Optional<OrderItem> item = orderItemRepository.findEligibleOrderItemById(
-                    orderItemId, userId, OrderStatus.CONFIRMED, toItemType(targetType), targetId);
+                    orderItemId, userId, OrderStatus.DELIVERED, toItemType(targetType), targetId);
             if (item.isEmpty()) {
                 throw new BusinessRuleException("You are not eligible to review this item");
             }

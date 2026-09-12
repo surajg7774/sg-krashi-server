@@ -10,15 +10,17 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * Order stats here count CONFIRMED and REFUNDED orders (a REFUNDED order was
- * confirmed-then-refunded, still a real historical sale) — same "was
- * genuinely confirmed at some point" rule Module 19's top-listings queries
- * use, not a fresh convention invented for this module.
+ * Order stats here count CONFIRMED, DELIVERED, and REFUNDED orders (a
+ * REFUNDED order was confirmed-then-refunded, still a real historical sale;
+ * a DELIVERED order is the same confirmed sale, just further along) — same
+ * "was genuinely confirmed at some point" rule Module 19's top-listings
+ * queries use, not a fresh convention invented for this module.
  */
 @Service
 public class FarmerDashboardServiceImpl implements FarmerDashboardService {
 
-    private static final List<OrderStatus> COUNTED_ORDER_STATUSES = List.of(OrderStatus.CONFIRMED, OrderStatus.REFUNDED);
+    private static final List<OrderStatus> COUNTED_ORDER_STATUSES =
+            List.of(OrderStatus.CONFIRMED, OrderStatus.DELIVERED, OrderStatus.REFUNDED);
 
     private final CropListingRepository cropListingRepository;
     private final OrderItemRepository orderItemRepository;

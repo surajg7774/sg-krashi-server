@@ -41,6 +41,17 @@ public class NotificationEventListener {
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onOrderDelivered(OrderDeliveredEvent event) {
+        notificationService.notify(
+                event.userId(),
+                NotificationType.ORDER_DELIVERED,
+                "Order Delivered",
+                "Your order has been delivered. We hope you enjoy it — let us know what you think with a review!",
+                NotificationRelatedType.ORDER,
+                event.orderId());
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onPaymentFailed(PaymentFailedEvent event) {
         boolean isOrder = ORDER_PAYABLE_TYPE.equals(event.payableType());
         notificationService.notify(
@@ -71,6 +82,17 @@ public class NotificationEventListener {
                 NotificationType.BOOKING_CANCELLED,
                 "Booking Cancelled",
                 "Your booking has been cancelled" + reasonSuffix + ".",
+                NotificationRelatedType.BOOKING,
+                event.bookingId());
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onBookingCompleted(BookingCompletedEvent event) {
+        notificationService.notify(
+                event.userId(),
+                NotificationType.BOOKING_COMPLETED,
+                "Booking Completed",
+                "Hope you enjoyed it! Your booking is now complete — consider leaving a review.",
                 NotificationRelatedType.BOOKING,
                 event.bookingId());
     }

@@ -17,6 +17,7 @@ import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.List;
 
 /**
  * All KPIs here are plain on-demand aggregate queries against existing
@@ -62,14 +63,15 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         Instant startOfMonth = today.withDayOfMonth(1).atStartOfDay(ADMIN_ZONE).toInstant();
 
         var ordersSummary = new DashboardSummaryResponse.OrdersSummary(
-                orderRepository.countByStatusAndCreatedAtBetween(OrderStatus.CONFIRMED, startOfToday, startOfTomorrow),
+                orderRepository.countByStatusInAndCreatedAtBetween(
+                        List.of(OrderStatus.CONFIRMED, OrderStatus.DELIVERED), startOfToday, startOfTomorrow),
                 orderRepository.countByStatusAndCreatedAtBetween(OrderStatus.PAYMENT_FAILED, startOfToday, startOfTomorrow),
                 orderRepository.countByStatusAndCreatedAtBetween(OrderStatus.PENDING_PAYMENT, startOfToday, startOfTomorrow));
 
         var bookingsSummary = new DashboardSummaryResponse.BookingsSummary(
                 bookingRepository.countByStatusAndStartDateGreaterThanEqual(BookingStatus.CONFIRMED, today),
                 bookingRepository.countByStatus(BookingStatus.PENDING_PAYMENT),
-                bookingRepository.countCompletedByProxy(today));
+                bookingRepository.countByStatus(BookingStatus.COMPLETED));
 
         var revenueSummary = new DashboardSummaryResponse.RevenueSummary(
                 paymentRepository.sumAmountByStatusSince(PaymentStatus.PAID, startOfToday),

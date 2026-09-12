@@ -20,6 +20,7 @@ import com.sgkrashi.customer.repository.AddressRepository;
 import com.sgkrashi.media.entity.MediaAsset;
 import com.sgkrashi.media.repository.MediaAssetRepository;
 import com.sgkrashi.notification.event.OrderConfirmedEvent;
+import com.sgkrashi.notification.event.OrderDeliveredEvent;
 import com.sgkrashi.notification.event.PaymentFailedEvent;
 import com.sgkrashi.notification.event.RefundProcessedEvent;
 import com.sgkrashi.order.dto.request.CheckoutRequest;
@@ -320,6 +321,27 @@ public class OrderServiceImpl implements OrderService {
     }
 
     /**
+     * Admin-marked only — no shipping/carrier integration exists to trigger
+     * this any other way. Only reachable from CONFIRMED: an order that never
+     * had a settled payment, or one already refunded, cannot be "delivered".
+     */
+    @Override
+    @Transactional
+    public void markDelivered(Long orderId) {
+        Order order = getOrderEntityOrThrow(orderId);
+        if (order.getStatus() == OrderStatus.DELIVERED) {
+            return;
+        }
+        if (order.getStatus() != OrderStatus.CONFIRMED) {
+            throw new BusinessRuleException("Only a confirmed order can be marked as delivered");
+        }
+        order.setStatus(OrderStatus.DELIVERED);
+        orderRepository.save(order);
+        recordStatusHistory(order, OrderStatus.DELIVERED, "Marked delivered by admin");
+        eventPublisher.publishEvent(new OrderDeliveredEvent(order.getId(), order.getUserId()));
+    }
+
+    /**
      * Called only from {@code RefundServiceImpl}, itself already guarded
      * against calling this twice for the same refund — see that class's
      * idempotency writeup. The {@code REFUNDED} check here is a defensive
@@ -402,22 +424,25 @@ public class OrderServiceImpl implements OrderService {
     }
 
     /**
-     * Admin-settable targets are deliberately limited to CONFIRMED/PAYMENT_FAILED
-     * — the two states a missed/delayed webhook might need manual reconciliation
-     * for. REFUNDED is never accepted here: it must only ever be reached via
+     * Admin-settable targets are CONFIRMED, PAYMENT_FAILED, and DELIVERED.
+     * CONFIRMED/PAYMENT_FAILED are the two states a missed/delayed webhook
+     * might need manual reconciliation for; DELIVERED is the platform's only
+     * manual fulfillment signal (no real shipping/carrier integration exists).
+     * REFUNDED is never accepted here: it must only ever be reached via
      * {@code RefundService}'s real gateway refund, or the Order/Payment
      * REFUNDED-ness invariant (an Order is only REFUNDED if its Payment
      * genuinely was) would be silently broken.
      *
      * <p>Delegates the actual transition to {@link #markConfirmed}/{@link
-     * #markPaymentFailed} — the same methods the payment webhook uses —
-     * rather than setting {@code status} directly. This used to just flip the
-     * column, which meant an admin reconciling a missed webhook silently sent
-     * no notification (unlike the webhook path) and, for PAYMENT_FAILED
-     * specifically, never restored the stock/quantity that checkout had
-     * already decremented — a real inventory bug, not just a missing email.
-     * Reusing these methods fixes both for free and avoids a second
-     * notification mechanism for the same two states.
+     * #markPaymentFailed}/{@link #markDelivered} — the same methods the
+     * payment webhook (for the first two) uses — rather than setting {@code
+     * status} directly. This used to just flip the column, which meant an
+     * admin reconciling a missed webhook silently sent no notification
+     * (unlike the webhook path) and, for PAYMENT_FAILED specifically, never
+     * restored the stock/quantity that checkout had already decremented — a
+     * real inventory bug, not just a missing email. Reusing these methods
+     * fixes both for free and avoids a second notification mechanism for the
+     * same states.
      */
     @Override
     @Transactional
@@ -425,7 +450,7 @@ public class OrderServiceImpl implements OrderService {
         if (newStatus == OrderStatus.REFUNDED) {
             throw new BusinessRuleException("Use the refund endpoint to mark an order as refunded");
         }
-        if (newStatus != OrderStatus.CONFIRMED && newStatus != OrderStatus.PAYMENT_FAILED) {
+        if (newStatus != OrderStatus.CONFIRMED && newStatus != OrderStatus.PAYMENT_FAILED && newStatus != OrderStatus.DELIVERED) {
             throw new BusinessRuleException("Cannot set an order's status to " + newStatus);
         }
 
@@ -437,6 +462,8 @@ public class OrderServiceImpl implements OrderService {
         if (newStatus != order.getStatus()) {
             if (newStatus == OrderStatus.CONFIRMED) {
                 markConfirmed(orderId);
+            } else if (newStatus == OrderStatus.DELIVERED) {
+                markDelivered(orderId);
             } else {
                 markPaymentFailed(orderId);
             }

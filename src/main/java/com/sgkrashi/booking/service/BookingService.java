@@ -61,6 +61,16 @@ public interface BookingService {
      */
     void markRefunded(Long bookingId);
 
+    /**
+     * Transitions a CONFIRMED booking to COMPLETED. Called both by the daily
+     * {@code BookingCompletionJob} (once {@code endDate} has passed) and by
+     * an Admin's manual override via {@link #updateBookingStatus} — a single
+     * shared method so exactly one code path ever fires {@code
+     * BookingCompletedEvent}, however the transition was triggered.
+     * Idempotent no-op if already COMPLETED.
+     */
+    void markCompleted(Long bookingId);
+
     /** Admin-wide, unfiltered-by-owner listing (Module 16) — every booking platform-wide. */
     PaginatedResponse<AdminBookingResponse> listBookingsForAdmin(
             BookingStatus status, Long userId, Instant dateFrom, Instant dateTo, int page, int size);

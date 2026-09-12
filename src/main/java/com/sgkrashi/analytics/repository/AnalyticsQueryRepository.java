@@ -41,14 +41,21 @@ public interface AnalyticsQueryRepository extends JpaRepository<Payment, Long> {
             """, nativeQuery = true)
     List<Object[]> findRevenueByBucket(@Param("datePattern") String datePattern, @Param("from") Instant from, @Param("to") Instant to);
 
-    /** Top products by revenue — only orders that were genuinely paid at some point (CONFIRMED or later-REFUNDED), never PENDING_PAYMENT/PAYMENT_FAILED. */
+    /**
+     * Top products by revenue — only orders that were genuinely paid at some
+     * point (CONFIRMED, DELIVERED, or later-REFUNDED — DELIVERED included
+     * since it's the SAME order continuing on from CONFIRMED, not a
+     * different population; omitting it would silently undercount revenue
+     * the moment an admin starts marking orders delivered), never
+     * PENDING_PAYMENT/PAYMENT_FAILED.
+     */
     @Query(value = """
             SELECT p.id AS id, p.name AS name, SUM(oi.quantity) AS units, SUM(oi.line_total) AS revenue
             FROM order_items oi
             JOIN orders o ON o.id = oi.order_id
             JOIN products p ON p.id = oi.product_id
             WHERE oi.item_type = 'PRODUCT'
-              AND o.status IN ('CONFIRMED', 'REFUNDED')
+              AND o.status IN ('CONFIRMED', 'DELIVERED', 'REFUNDED')
               AND o.created_at >= :from AND o.created_at < :to
             GROUP BY p.id, p.name
             ORDER BY revenue DESC
@@ -63,7 +70,7 @@ public interface AnalyticsQueryRepository extends JpaRepository<Payment, Long> {
             JOIN orders o ON o.id = oi.order_id
             JOIN crop_listings c ON c.id = oi.crop_listing_id
             WHERE oi.item_type = 'CROP_LISTING'
-              AND o.status IN ('CONFIRMED', 'REFUNDED')
+              AND o.status IN ('CONFIRMED', 'DELIVERED', 'REFUNDED')
               AND o.created_at >= :from AND o.created_at < :to
             GROUP BY c.id, c.name
             ORDER BY revenue DESC
@@ -101,19 +108,26 @@ public interface AnalyticsQueryRepository extends JpaRepository<Payment, Long> {
 
     /**
      * Booked days per listing WITHIN the requested window, computed as the
-     * overlap between each CONFIRMED booking's {@code [start_date, end_date)}
-     * and the window's {@code [from, to)} — {@code GREATEST}/{@code LEAST}
-     * clip each booking to the window before {@code DATEDIFF} measures it, so
-     * a booking that only partially overlaps the window isn't over-counted.
-     * Same inclusive-start/exclusive-end convention {@code Booking} itself
-     * documents.
+     * overlap between each CONFIRMED-or-COMPLETED booking's {@code
+     * [start_date, end_date)} and the window's {@code [from, to)} — {@code
+     * GREATEST}/{@code LEAST} clip each booking to the window before {@code
+     * DATEDIFF} measures it, so a booking that only partially overlaps the
+     * window isn't over-counted. Same inclusive-start/exclusive-end
+     * convention {@code Booking} itself documents.
+     *
+     * <p>COMPLETED is included alongside CONFIRMED for the same reason
+     * {@link #findTopProducts} now includes DELIVERED: a booking that has
+     * since been auto-completed by {@code BookingCompletionJob} is the same
+     * historical occupancy, not a different one — an admin running this
+     * report for a past month must still see those nights, not lose them the
+     * moment the nightly job flips their status.
      */
     @Query(value = """
             SELECT b.bookable_id AS bookableId,
                    SUM(GREATEST(0, DATEDIFF(LEAST(b.end_date, :to), GREATEST(b.start_date, :from)))) AS bookedDays
             FROM bookings b
             WHERE b.bookable_type = :bookableType
-              AND b.status = 'CONFIRMED'
+              AND b.status IN ('CONFIRMED', 'COMPLETED')
               AND b.start_date < :to
               AND b.end_date > :from
             GROUP BY b.bookable_id
@@ -135,13 +149,14 @@ public interface AnalyticsQueryRepository extends JpaRepository<Payment, Long> {
      * Predictive Analytics — units sold per product across completed orders
      * within the trailing window; {@code ForecastServiceImpl.getStockRisk()}
      * divides this by the window length for an average daily sales rate.
+     * Same CONFIRMED/DELIVERED/REFUNDED reasoning as {@link #findTopProducts}.
      */
     @Query(value = """
             SELECT oi.product_id AS productId, SUM(oi.quantity) AS totalQty
             FROM order_items oi
             JOIN orders o ON o.id = oi.order_id
             WHERE oi.item_type = 'PRODUCT'
-              AND o.status IN ('CONFIRMED', 'REFUNDED')
+              AND o.status IN ('CONFIRMED', 'DELIVERED', 'REFUNDED')
               AND o.created_at >= :from AND o.created_at < :to
             GROUP BY oi.product_id
             """, nativeQuery = true)

@@ -37,6 +37,15 @@ public interface OrderService {
     void markPaymentFailed(Long orderId);
 
     /**
+     * Transitions a CONFIRMED order to DELIVERED — Admin-marked only, no real
+     * shipping/carrier integration exists to trigger this automatically.
+     * Idempotent no-op if already DELIVERED.
+     *
+     * @throws com.sgkrashi.common.exception.BusinessRuleException if the order isn't currently CONFIRMED
+     */
+    void markDelivered(Long orderId);
+
+    /**
      * Transitions an order to REFUNDED once {@code RefundService} has already
      * processed the real gateway refund. Idempotent no-op if already REFUNDED —
      * never called except from {@code RefundService}, which itself guards
@@ -55,14 +64,15 @@ public interface OrderService {
     AdminOrderDetailResponse getOrderDetailForAdmin(Long orderId);
 
     /**
-     * Admin-driven status change. {@code newStatus} must be CONFIRMED or
-     * PAYMENT_FAILED — REFUNDED is reachable only via {@code RefundService}'s
-     * real refund flow, never through this plain status-update endpoint.
+     * Admin-driven status change. {@code newStatus} must be CONFIRMED,
+     * PAYMENT_FAILED, or DELIVERED (DELIVERED only from a currently-CONFIRMED
+     * order) — REFUNDED is reachable only via {@code RefundService}'s real
+     * refund flow, never through this plain status-update endpoint.
      * {@code adminNotes} is always applied, independent of whether the status
      * actually changes (a no-op re-submission of the current status is allowed
      * purely to update notes).
      *
-     * @throws com.sgkrashi.common.exception.BusinessRuleException if {@code newStatus} is REFUNDED, or isn't a real reachable status for this action
+     * @throws com.sgkrashi.common.exception.BusinessRuleException if {@code newStatus} is REFUNDED, isn't a real reachable status for this action, or is DELIVERED while the order isn't currently CONFIRMED
      */
     AdminOrderDetailResponse updateOrderStatus(Long orderId, OrderStatus newStatus, String adminNotes);
 }

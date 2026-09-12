@@ -3,6 +3,7 @@ package com.sgkrashi.booking.controller;
 import com.sgkrashi.booking.dto.request.AdminBookingStatusUpdateRequest;
 import com.sgkrashi.booking.dto.response.AdminBookingResponse;
 import com.sgkrashi.booking.entity.BookingStatus;
+import com.sgkrashi.booking.scheduler.BookingCompletionJob;
 import com.sgkrashi.booking.service.BookingService;
 import com.sgkrashi.common.dto.ApiResponse;
 import com.sgkrashi.common.dto.PaginatedResponse;
@@ -35,10 +36,12 @@ public class AdminBookingController {
 
     private final BookingService bookingService;
     private final RefundService refundService;
+    private final BookingCompletionJob bookingCompletionJob;
 
-    public AdminBookingController(BookingService bookingService, RefundService refundService) {
+    public AdminBookingController(BookingService bookingService, RefundService refundService, BookingCompletionJob bookingCompletionJob) {
         this.bookingService = bookingService;
         this.refundService = refundService;
+        this.bookingCompletionJob = bookingCompletionJob;
     }
 
     @GetMapping
@@ -75,5 +78,17 @@ public class AdminBookingController {
         RefundResultResponse result = refundService.refundBooking(id);
         String message = result.alreadyRefunded() ? "This booking was already refunded" : "Refund processed";
         return ResponseEntity.ok(ApiResponse.success(result, message));
+    }
+
+    /**
+     * Manually runs {@code BookingCompletionJob} on demand — lets an Admin (or
+     * this platform's own test/verification tooling) confirm the daily
+     * auto-completion job works without waiting for its real 1 AM IST
+     * schedule. Idempotent, same as the scheduled run itself.
+     */
+    @PostMapping("/run-completion-job")
+    public ResponseEntity<ApiResponse<Integer>> runCompletionJob() {
+        int transitioned = bookingCompletionJob.runOnce();
+        return ResponseEntity.ok(ApiResponse.success(transitioned, transitioned + " booking(s) transitioned to COMPLETED"));
     }
 }

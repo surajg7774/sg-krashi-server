@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecificationExecutor<Order> {
@@ -18,6 +19,14 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
 
     long countByUserId(Long userId);
 
-    /** Admin dashboard KPI — today's orders by status (Module 14). {@code DELIVERED} is not a real state (see Module 12's gap note); only CONFIRMED/PAYMENT_FAILED/PENDING_PAYMENT are ever reachable. */
+    /** Admin dashboard KPI — today's orders in a single given status (Module 14). */
     long countByStatusAndCreatedAtBetween(OrderStatus status, Instant start, Instant end);
+
+    /**
+     * Same KPI as {@link #countByStatusAndCreatedAtBetween}, but across
+     * several statuses at once — used for "today's successfully-paid orders",
+     * which now spans both CONFIRMED and (once an admin has marked it)
+     * DELIVERED, since a delivered order was just as genuinely paid today.
+     */
+    long countByStatusInAndCreatedAtBetween(List<OrderStatus> statuses, Instant start, Instant end);
 }
