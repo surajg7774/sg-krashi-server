@@ -20,12 +20,14 @@ public interface ChatAssistantProvider {
      * @param groundingContext       retrieved platform-knowledge passages to ground the reply in, or {@code null}/blank if none were relevant
      * @param personalDataContext    the authenticated caller's own recent orders/bookings/inquiries, pre-fetched and formatted by {@code ChatServiceImpl} — {@code null} for Guests or when the message wasn't recognized as a personal-data question. This provider never fetches this itself and never receives an identifier it could use to fetch someone else's.
      * @param guestAskedPersonalData true when a Guest's message looks like a personal-data question — the provider should answer by explaining they need to log in, not attempt to guess
+     * @param weatherContext         current weather conditions for the farm location, pre-fetched by {@code ChatServiceImpl} only when the message looks weather/timing-related, or {@code null} otherwise/on fetch failure — same "backend decides and injects, model never fetches" contract as the other context parameters here.
      */
     String reply(
             List<ChatTurn> history,
             String newUserMessage,
             String groundingContext,
             String personalDataContext,
-            boolean guestAskedPersonalData
+            boolean guestAskedPersonalData,
+            String weatherContext
     );
 }

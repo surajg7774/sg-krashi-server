@@ -76,9 +76,10 @@ public class GeminiChatProvider implements ChatAssistantProvider {
             String newUserMessage,
             String groundingContext,
             String personalDataContext,
-            boolean guestAskedPersonalData
+            boolean guestAskedPersonalData,
+            String weatherContext
     ) {
-        ObjectNode payload = buildPayload(history, newUserMessage, groundingContext, personalDataContext, guestAskedPersonalData);
+        ObjectNode payload = buildPayload(history, newUserMessage, groundingContext, personalDataContext, guestAskedPersonalData, weatherContext);
 
         String responseBody;
         try {
@@ -114,12 +115,13 @@ public class GeminiChatProvider implements ChatAssistantProvider {
             String newUserMessage,
             String groundingContext,
             String personalDataContext,
-            boolean guestAskedPersonalData
+            boolean guestAskedPersonalData,
+            String weatherContext
     ) {
         ObjectNode systemInstruction = objectMapper.createObjectNode();
         systemInstruction.set("parts", objectMapper.createArrayNode()
                 .add(objectMapper.createObjectNode().put("text", buildSystemInstructionText(
-                        groundingContext, personalDataContext, guestAskedPersonalData))));
+                        groundingContext, personalDataContext, guestAskedPersonalData, weatherContext))));
 
         ArrayNode contents = objectMapper.createArrayNode();
         for (ChatTurn turn : history) {
@@ -147,13 +149,20 @@ public class GeminiChatProvider implements ChatAssistantProvider {
         return node;
     }
 
-    private String buildSystemInstructionText(String groundingContext, String personalDataContext, boolean guestAskedPersonalData) {
+    private String buildSystemInstructionText(String groundingContext, String personalDataContext, boolean guestAskedPersonalData, String weatherContext) {
         StringBuilder text = new StringBuilder(SYSTEM_INSTRUCTION);
 
         if (groundingContext != null && !groundingContext.isBlank()) {
             text.append("\n\nReference information from platform documentation (prefer this where it's relevant "
                     + "to the question; do not invent specific numbers or policy details beyond what's here):\n\n")
                     .append(groundingContext);
+        }
+
+        if (weatherContext != null && !weatherContext.isBlank()) {
+            text.append("\n\nCurrent real weather conditions for the farm's location, already looked up by the "
+                    + "backend — use this if the question is about weather, timing of farm activities (sowing, "
+                    + "harvesting, irrigation), or similar, rather than guessing or inventing figures:\n\n")
+                    .append(weatherContext);
         }
 
         if (personalDataContext != null && !personalDataContext.isBlank()) {

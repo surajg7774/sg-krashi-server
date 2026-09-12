@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.sgkrashi.ai.weather.dto.WeatherSnapshot;
+import com.sgkrashi.ai.weather.service.WeatherService;
 import com.sgkrashi.cropdoctor.exception.AiQuotaExceededException;
 import com.sgkrashi.cropdoctor.exception.AiServiceUnavailableException;
 import com.sgkrashi.cropdoctor.provider.ConfidenceBand;
@@ -42,6 +44,7 @@ import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -82,18 +85,21 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
     private final ObjectMapper objectMapper;
     private final JsonNode responseSchema;
     private final RetrievalService retrievalService;
+    private final WeatherService weatherService;
 
     public GeminiAnalysisProvider(
             @Value("${app.gemini.api-key}") String apiKey,
             @Value("${app.gemini.model:gemini-3.6-flash}") String model,
             @Value("${app.gemini.base-url:https://generativelanguage.googleapis.com}") String baseUrl,
             ObjectMapper objectMapper,
-            RetrievalService retrievalService
+            RetrievalService retrievalService,
+            WeatherService weatherService
     ) {
         this.apiKey = apiKey;
         this.model = model;
         this.objectMapper = objectMapper;
         this.retrievalService = retrievalService;
+        this.weatherService = weatherService;
         this.webClient = WebClient.builder().baseUrl(baseUrl).build();
         try {
             this.responseSchema = objectMapper.readTree(GeminiResponseSchema.JSON);
@@ -114,7 +120,14 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
         // prompt just omits the grounding section and Gemini answers from its
         // own general knowledge alone, exactly as it did before this feature.
         List<KnowledgeBaseEntry> groundingEntries = retrievalService.retrieveForCrop(declaredCrop, MAX_GROUNDING_ENTRIES);
-        ObjectNode payload = buildPayload(images, declaredCrop, language, groundingEntries);
+        // Additive to the RAG grounding above, never a replacement — see
+        // WeatherService's Javadoc for the graceful-degradation contract.
+        // Weather here is genuinely relevant to a disease/pest diagnosis
+        // (humidity/rainfall are real contributing factors for many fungal
+        // issues), unlike the chat assistant's use of the same service,
+        // which only fires on an explicit weather-shaped question.
+        Optional<WeatherSnapshot> weather = weatherService.fetchCurrentWeather();
+        ObjectNode payload = buildPayload(images, declaredCrop, language, groundingEntries, weather);
 
         String responseBody;
         try {
@@ -146,10 +159,10 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
         return parseAndValidate(responseBody, declaredCrop, groundingEntries);
     }
 
-    private ObjectNode buildPayload(List<MultipartFile> images, String declaredCrop, String language, List<KnowledgeBaseEntry> groundingEntries) {
+    private ObjectNode buildPayload(List<MultipartFile> images, String declaredCrop, String language, List<KnowledgeBaseEntry> groundingEntries, Optional<WeatherSnapshot> weather) {
         ArrayNode parts = objectMapper.createArrayNode();
         parts.add(objectMapper.createObjectNode().put(
-                "text", buildPrompt(declaredCrop, language, images.size(), groundingEntries)));
+                "text", buildPrompt(declaredCrop, language, images.size(), groundingEntries, weather)));
 
         for (MultipartFile image : images) {
             ObjectNode inlineData = objectMapper.createObjectNode();
@@ -237,7 +250,7 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
     private record ResizedImage(byte[] bytes, String mimeType) {
     }
 
-    private String buildPrompt(String declaredCrop, String languageCode, int imageCount, List<KnowledgeBaseEntry> groundingEntries) {
+    private String buildPrompt(String declaredCrop, String languageCode, int imageCount, List<KnowledgeBaseEntry> groundingEntries, Optional<WeatherSnapshot> weather) {
         String multiImageNote = imageCount > 1
                 ? "You have been given " + imageCount + " photos of the same plant, taken from different "
                 + "angles/distances — use all of them together as evidence for one diagnosis, not separate ones.\n\n"
@@ -252,6 +265,7 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
 
                 %s
                 %s
+                %s
                 Be honest about uncertainty. If the image is not a plant, or you cannot make a reliable diagnosis, \
                 say so clearly via healthStatus=UNCERTAIN and confidenceBand=LOW rather than guessing or inventing \
                 a plausible-sounding diagnosis. Do not fabricate specific causes/actions/prevention if you are not \
@@ -260,7 +274,8 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
                 confirm).
 
                 Return your analysis as JSON matching the required schema exactly.""".formatted(
-                multiImageNote, declaredCrop, buildLanguageInstruction(languageCode), buildGroundingSection(groundingEntries));
+                multiImageNote, declaredCrop, buildLanguageInstruction(languageCode), buildGroundingSection(groundingEntries),
+                buildWeatherSection(weather));
     }
 
     /**
@@ -284,6 +299,29 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
                     .append(entry.getContent()).append("\n\n");
         }
         return section.toString();
+    }
+
+    /**
+     * Empty string when weather is unavailable (the exact same honest
+     * "no grounding this time" contract {@link #buildGroundingSection} uses
+     * for the knowledge base) — never a placeholder or a stale-looking
+     * fabricated figure. Framed as "consider... if relevant" rather than a
+     * directive, since weather is a plausible contributing factor for many
+     * fungal/bacterial issues but Gemini's own visual read of the photo
+     * should still lead the actual diagnosis.
+     */
+    private String buildWeatherSection(Optional<WeatherSnapshot> weather) {
+        if (weather.isEmpty()) {
+            return "";
+        }
+        WeatherSnapshot snapshot = weather.get();
+        return """
+
+                Current conditions at the farm location (Khandwa district, Madhya Pradesh): %.1f°C, %.0f%% \
+                humidity, %.1fmm rainfall in the past 3 days. %s. Consider this when assessing likely \
+                environmental contributing factors, if relevant to what you observe in the photo — it's context, \
+                not a substitute for your own visual read of the image.
+                """.formatted(snapshot.temperatureCelsius(), snapshot.humidityPercent(), snapshot.recentRainfallMm(), snapshot.forecastSummary());
     }
 
     /**

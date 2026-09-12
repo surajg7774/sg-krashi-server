@@ -1,5 +1,7 @@
 package com.sgkrashi.chatassistant.service.impl;
 
+import com.sgkrashi.ai.weather.dto.WeatherSnapshot;
+import com.sgkrashi.ai.weather.service.WeatherService;
 import com.sgkrashi.auth.security.CurrentUserProvider;
 import com.sgkrashi.booking.dto.response.BookingResponse;
 import com.sgkrashi.booking.service.BookingService;
@@ -29,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 /**
  * <h2>The security-critical class in this feature</h2>
@@ -69,6 +72,18 @@ public class ChatServiceImpl implements ChatService {
             "my recent booking"
     );
 
+    // Same "keyword-based is fine for V1" reasoning as PERSONAL_DATA_KEYWORDS
+    // — a false positive here just means an unnecessary-but-harmless weather
+    // fetch (cached, cheap); a false negative just means a weather-adjacent
+    // question gets answered without that grounding. Hindi/Hinglish terms
+    // included since AI Crop Doctor's own multilingual precedent (and this
+    // feature's real usage in this conversation) makes it clear farmers type
+    // in Hinglish, not just English.
+    private static final List<String> WEATHER_KEYWORDS = List.of(
+            "weather", "rain", "rainfall", "humidity", "temperature", "sow", "sowing", "harvest",
+            "harvesting", "irrigat", "monsoon", "forecast", "mausam", "baarish", "barish"
+    );
+
     private final ChatSessionRepository chatSessionRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final PlatformKnowledgeService platformKnowledgeService;
@@ -78,6 +93,7 @@ public class ChatServiceImpl implements ChatService {
     private final OrderService orderService;
     private final BookingService bookingService;
     private final InquiryService inquiryService;
+    private final WeatherService weatherService;
     private final boolean chatAssistantEnabled;
 
     public ChatServiceImpl(
@@ -90,6 +106,7 @@ public class ChatServiceImpl implements ChatService {
             OrderService orderService,
             BookingService bookingService,
             InquiryService inquiryService,
+            WeatherService weatherService,
             @Value("${app.chat-assistant.enabled:true}") boolean chatAssistantEnabled
     ) {
         this.chatSessionRepository = chatSessionRepository;
@@ -101,6 +118,7 @@ public class ChatServiceImpl implements ChatService {
         this.orderService = orderService;
         this.bookingService = bookingService;
         this.inquiryService = inquiryService;
+        this.weatherService = weatherService;
         this.chatAssistantEnabled = chatAssistantEnabled;
     }
 
@@ -165,7 +183,9 @@ public class ChatServiceImpl implements ChatService {
             }
         }
 
-        String replyText = chatAssistantProvider.reply(history, message, groundingContext, personalDataContext, guestAskedPersonalData);
+        String weatherContext = looksLikeWeatherQuestion(message) ? buildWeatherContext() : null;
+
+        String replyText = chatAssistantProvider.reply(history, message, groundingContext, personalDataContext, guestAskedPersonalData, weatherContext);
 
         ChatMessage assistantMessage = new ChatMessage();
         assistantMessage.setSessionId(sessionId);
@@ -198,6 +218,22 @@ public class ChatServiceImpl implements ChatService {
     private boolean looksLikePersonalDataQuestion(String message) {
         String lower = message.toLowerCase(Locale.ROOT);
         return PERSONAL_DATA_KEYWORDS.stream().anyMatch(lower::contains);
+    }
+
+    private boolean looksLikeWeatherQuestion(String message) {
+        String lower = message.toLowerCase(Locale.ROOT);
+        return WEATHER_KEYWORDS.stream().anyMatch(lower::contains);
+    }
+
+    /** {@code null} on cache-miss-and-fetch-failure — {@link WeatherService} already logs the cause; the chat reply just proceeds without this grounding, same graceful-degradation contract AI Crop Doctor's use of the same service follows. */
+    private String buildWeatherContext() {
+        Optional<WeatherSnapshot> weather = weatherService.fetchCurrentWeather();
+        if (weather.isEmpty()) {
+            return null;
+        }
+        WeatherSnapshot snapshot = weather.get();
+        return "Farm location (Khandwa district, Madhya Pradesh): %.1f°C, %.0f%% humidity, %.1fmm rainfall in the past 3 days. %s."
+                .formatted(snapshot.temperatureCelsius(), snapshot.humidityPercent(), snapshot.recentRainfallMm(), snapshot.forecastSummary());
     }
 
     /** See this class's own Javadoc — this is the method the security guarantee rests on. */
