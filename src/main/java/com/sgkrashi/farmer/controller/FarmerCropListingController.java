@@ -7,6 +7,7 @@ import com.sgkrashi.cropmarketplace.dto.response.CropListingDetailResponse;
 import com.sgkrashi.cropmarketplace.dto.response.CropListingSummaryResponse;
 import com.sgkrashi.farmer.dto.request.FarmerCropListingRequest;
 import com.sgkrashi.farmer.service.FarmerCropListingService;
+import com.sgkrashi.media.dto.request.UpdateSortOrderRequest;
 import com.sgkrashi.media.dto.response.MediaAssetResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -15,6 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -93,5 +95,29 @@ public class FarmerCropListingController {
         Long farmerId = currentUserProvider.getCurrentUserId();
         MediaAssetResponse response = farmerCropListingService.uploadOwnListingMedia(farmerId, id, file);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response, "Photo uploaded"));
+    }
+
+    /**
+     * Farmer-scoped equivalent of {@code AdminMediaController.delete} — a
+     * genuine hard delete (also removes the underlying Cloudinary file), just
+     * ownership-checked against both the listing and the media asset first.
+     */
+    @DeleteMapping("/{id}/media/{mediaId}")
+    public ResponseEntity<ApiResponse<Void>> deleteMedia(@PathVariable Long id, @PathVariable Long mediaId) {
+        Long farmerId = currentUserProvider.getCurrentUserId();
+        farmerCropListingService.deleteOwnListingMedia(farmerId, id, mediaId);
+        return ResponseEntity.ok(ApiResponse.success(null, "Photo deleted"));
+    }
+
+    /** Farmer-scoped equivalent of {@code AdminMediaController.updateSortOrder}. */
+    @PatchMapping("/{id}/media/{mediaId}")
+    public ResponseEntity<ApiResponse<MediaAssetResponse>> reorderMedia(
+            @PathVariable Long id,
+            @PathVariable Long mediaId,
+            @Valid @RequestBody UpdateSortOrderRequest request
+    ) {
+        Long farmerId = currentUserProvider.getCurrentUserId();
+        MediaAssetResponse response = farmerCropListingService.reorderOwnListingMedia(farmerId, id, mediaId, request.sortOrder());
+        return ResponseEntity.ok(ApiResponse.success(response, "Sort order updated"));
     }
 }

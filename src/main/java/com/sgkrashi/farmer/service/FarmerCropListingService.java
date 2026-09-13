@@ -39,4 +39,22 @@ public interface FarmerCropListingService {
      * @throws com.sgkrashi.common.exception.ValidationException if the file fails {@code MediaService}'s validation
      */
     MediaAssetResponse uploadOwnListingMedia(Long farmerId, Long id, MultipartFile file);
+
+    /**
+     * Deletes one of the Farmer's own listing photos — a genuine hard delete
+     * that also removes the underlying stored file (delegates to {@code
+     * MediaService.delete} verbatim).
+     *
+     * @throws com.sgkrashi.common.exception.ResourceNotFoundException if the listing doesn't belong to this
+     * farmer, OR if the media asset doesn't belong to this listing — never distinguishes any of these to the caller.
+     */
+    void deleteOwnListingMedia(Long farmerId, Long id, Long mediaId);
+
+    /**
+     * Reorders one of the Farmer's own listing photos in place — no delete/
+     * re-upload involved, just the stored {@code sortOrder}.
+     *
+     * @throws com.sgkrashi.common.exception.ResourceNotFoundException on ownership mismatch — see {@link #deleteOwnListingMedia}.
+     */
+    MediaAssetResponse reorderOwnListingMedia(Long farmerId, Long id, Long mediaId, int sortOrder);
 }
