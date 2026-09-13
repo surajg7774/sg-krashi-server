@@ -120,22 +120,48 @@ public class AuthController {
         }
     }
 
+    /**
+     * {@code SameSite=None} (not {@code Strict} or the default {@code Lax}) is
+     * required here, not a stylistic choice: the frontend (Vercel) and this API
+     * (Railway) are different sites, so every fetch/XHR call between them —
+     * including this cookie's own round trip on {@code /refresh} — is
+     * cross-site. Browsers withhold {@code Strict} cookies from ALL cross-site
+     * requests (not just top-level navigations, which is the {@code Lax}
+     * carve-out), so the refresh call always sent no cookie at all and this
+     * endpoint always saw {@code refreshToken == null} — a full page reload
+     * silently logged every user out. Confirmed live: the outgoing
+     * {@code /auth/refresh} request carried no {@code Cookie} header
+     * whatsoever, not merely an invalid one.
+     *
+     * <p>{@code SameSite=None} requires {@code Secure} (already set) and does
+     * remove the CSRF protection {@code Strict}/{@code Lax} provide — a
+     * third-party page can now trigger a cross-site POST to this cookie's path
+     * that carries it. Two things keep that low-severity here: the cookie's
+     * {@code path} is scoped to {@code /api/v1/auth} only (never reaches any
+     * other endpoint), and {@link com.sgkrashi.config.CorsConfig} is a strict,
+     * non-wildcard origin allow-list, so a forged cross-site call can rotate
+     * this cookie (a nuisance forced-logout/forced-refresh) but can never let
+     * an attacker's own JavaScript read the response — {@code
+     * Access-Control-Allow-Origin} would have to name the attacker's origin
+     * for that, and it never does.
+     */
     private void setRefreshCookie(HttpServletResponse response, String rawRefreshToken) {
         ResponseCookie cookie = ResponseCookie.from(REFRESH_COOKIE_NAME, rawRefreshToken)
                 .httpOnly(true)
                 .secure(true)
-                .sameSite("Strict")
+                .sameSite("None")
                 .path(REFRESH_COOKIE_PATH)
                 .maxAge(REFRESH_COOKIE_MAX_AGE)
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
 
+    /** Same {@code SameSite=None} reasoning as {@link #setRefreshCookie} — must match exactly, or the browser treats this as a different cookie and never clears the original one on cross-site logout calls. */
     private void clearRefreshCookie(HttpServletResponse response) {
         ResponseCookie cookie = ResponseCookie.from(REFRESH_COOKIE_NAME, "")
                 .httpOnly(true)
                 .secure(true)
-                .sameSite("Strict")
+                .sameSite("None")
                 .path(REFRESH_COOKIE_PATH)
                 .maxAge(0)
                 .build();
