@@ -127,34 +127,45 @@ public class PayoutServiceImpl implements PayoutService {
     }
 
     private void clawBackIfAlreadyLinked(OrderItem item) {
-        Optional<FarmerPayoutLine> earningLine = farmerPayoutLineRepository.findByOrderItemIdAndLineType(item.getId(), PayoutLineType.EARNING);
-        log.info("clawBackIfAlreadyLinked: orderItemId={} earningLine present={}", item.getId(), earningLine.isPresent());
-        if (earningLine.isEmpty()) {
-            return;
+        try {
+            Optional<FarmerPayoutLine> earningLine = farmerPayoutLineRepository.findByOrderItemIdAndLineType(item.getId(), PayoutLineType.EARNING);
+            log.info("clawBackIfAlreadyLinked: orderItemId={} earningLine present={}", item.getId(), earningLine.isPresent());
+            if (earningLine.isEmpty()) {
+                return;
+            }
+            // Defensive idempotency guard — RefundServiceImpl already guarantees
+            // markRefunded (and therefore this event) fires at most once per
+            // refund, but this mirrors that class's own "defensive second layer,
+            // not the primary guarantee" style.
+            boolean alreadyClawedBack = farmerPayoutLineRepository.existsByOrderItemIdAndLineType(item.getId(), PayoutLineType.CLAWBACK);
+            log.info("clawBackIfAlreadyLinked: orderItemId={} alreadyClawedBack={}", item.getId(), alreadyClawedBack);
+            if (alreadyClawedBack) {
+                return;
+            }
+
+            FarmerPayoutLine original = earningLine.get();
+            log.info("clawBackIfAlreadyLinked: orderItemId={} original line id={} gross={}", item.getId(), original.getId(), original.getGrossAmount());
+            Long farmerId = item.getCropListing().getFarmerId();
+            log.info("clawBackIfAlreadyLinked: orderItemId={} farmerId={}", item.getId(), farmerId);
+            FarmerPayout openBatch = getOrCreateOpenBatch(farmerId);
+            log.info("clawBackIfAlreadyLinked: orderItemId={} openBatch id={} status={}", item.getId(), openBatch.getId(), openBatch.getStatus());
+
+            FarmerPayoutLine clawback = new FarmerPayoutLine();
+            clawback.setPayout(openBatch);
+            clawback.setOrderItem(item);
+            clawback.setLineType(PayoutLineType.CLAWBACK);
+            clawback.setGrossAmount(original.getGrossAmount().negate());
+            clawback.setCommissionAmount(original.getCommissionAmount().negate());
+            clawback.setNetAmount(original.getNetAmount().negate());
+            FarmerPayoutLine savedClawback = farmerPayoutLineRepository.save(clawback);
+            log.info("clawBackIfAlreadyLinked: orderItemId={} saved clawback line id={}", item.getId(), savedClawback.getId());
+
+            recomputeTotals(openBatch.getId());
+            log.info("clawBackIfAlreadyLinked: orderItemId={} recomputeTotals done", item.getId());
+        } catch (RuntimeException ex) {
+            log.error("clawBackIfAlreadyLinked: FAILED for orderItemId={}", item.getId(), ex);
+            throw ex;
         }
-        // Defensive idempotency guard — RefundServiceImpl already guarantees
-        // markRefunded (and therefore this event) fires at most once per
-        // refund, but this mirrors that class's own "defensive second layer,
-        // not the primary guarantee" style.
-        if (farmerPayoutLineRepository.existsByOrderItemIdAndLineType(item.getId(), PayoutLineType.CLAWBACK)) {
-            log.info("clawBackIfAlreadyLinked: orderItemId={} already has a CLAWBACK line, skipping", item.getId());
-            return;
-        }
-
-        FarmerPayoutLine original = earningLine.get();
-        Long farmerId = item.getCropListing().getFarmerId();
-        FarmerPayout openBatch = getOrCreateOpenBatch(farmerId);
-
-        FarmerPayoutLine clawback = new FarmerPayoutLine();
-        clawback.setPayout(openBatch);
-        clawback.setOrderItem(item);
-        clawback.setLineType(PayoutLineType.CLAWBACK);
-        clawback.setGrossAmount(original.getGrossAmount().negate());
-        clawback.setCommissionAmount(original.getCommissionAmount().negate());
-        clawback.setNetAmount(original.getNetAmount().negate());
-        farmerPayoutLineRepository.save(clawback);
-
-        recomputeTotals(openBatch.getId());
     }
 
     @Override
