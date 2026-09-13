@@ -157,8 +157,10 @@ public class PayoutServiceImpl implements PayoutService {
             clawback.setGrossAmount(original.getGrossAmount().negate());
             clawback.setCommissionAmount(original.getCommissionAmount().negate());
             clawback.setNetAmount(original.getNetAmount().negate());
-            FarmerPayoutLine savedClawback = farmerPayoutLineRepository.save(clawback);
+            FarmerPayoutLine savedClawback = farmerPayoutLineRepository.saveAndFlush(clawback);
             log.info("clawBackIfAlreadyLinked: orderItemId={} saved clawback line id={}", item.getId(), savedClawback.getId());
+            long countAfterFlush = farmerPayoutLineRepository.count();
+            log.info("clawBackIfAlreadyLinked: orderItemId={} total farmer_payout_lines rows after flush={}", item.getId(), countAfterFlush);
 
             recomputeTotals(openBatch.getId());
             log.info("clawBackIfAlreadyLinked: orderItemId={} recomputeTotals done", item.getId());
