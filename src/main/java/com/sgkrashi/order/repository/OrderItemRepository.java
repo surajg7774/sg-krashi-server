@@ -3,6 +3,7 @@ package com.sgkrashi.order.repository;
 import com.sgkrashi.common.entity.ItemType;
 import com.sgkrashi.order.entity.OrderItem;
 import com.sgkrashi.order.entity.OrderStatus;
+import com.sgkrashi.payout.entity.PayoutLineType;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -88,4 +89,48 @@ public interface OrderItemRepository extends JpaRepository<OrderItem, Long> {
             where oi.cropListing.farmerId = :farmerId and oi.order.status in :statuses
             """)
     long sumQuantityByFarmerId(@Param("farmerId") Long farmerId, @Param("statuses") List<OrderStatus> statuses);
+
+    /**
+     * Farmer Payout System — this farmer's crop-listing order items that are
+     * currently DELIVERED and have never been linked into a payout (no
+     * EARNING line yet). Reused for two purposes: the weekly batch job's
+     * actual sweep, and the farmer dashboard's live "pending/accrued"
+     * preview — both must use the exact same eligibility rule, or the
+     * preview could show a figure the real batch wouldn't reproduce.
+     *
+     * <p>{@code o.status = DELIVERED} is a live read of the order's current
+     * status, not a snapshot — so an order that has since moved to REFUNDED
+     * is automatically excluded here without any extra clawback-specific
+     * filtering. The already-linked exclusion is the query's own defense
+     * against double-counting on a re-run; {@code farmer_payout_lines}'
+     * {@code UNIQUE(order_item_id, line_type)} constraint is the second,
+     * DB-enforced layer behind it.
+     */
+    @Query("""
+            select oi from OrderItem oi
+            where oi.cropListing.farmerId = :farmerId
+              and oi.order.status = :deliveredStatus
+              and oi.id not in (
+                  select l.orderItem.id from FarmerPayoutLine l where l.lineType = :earningLineType
+              )
+            """)
+    List<OrderItem> findUnbatchedDeliveredItemsForFarmer(
+            @Param("farmerId") Long farmerId,
+            @Param("deliveredStatus") OrderStatus deliveredStatus,
+            @Param("earningLineType") PayoutLineType earningLineType
+    );
+
+    /** Companion to {@link #findUnbatchedDeliveredItemsForFarmer} — which farmers the weekly job actually needs to process this run. */
+    @Query("""
+            select distinct oi.cropListing.farmerId from OrderItem oi
+            where oi.cropListing.farmerId is not null
+              and oi.order.status = :deliveredStatus
+              and oi.id not in (
+                  select l.orderItem.id from FarmerPayoutLine l where l.lineType = :earningLineType
+              )
+            """)
+    List<Long> findFarmerIdsWithUnbatchedDeliveredItems(
+            @Param("deliveredStatus") OrderStatus deliveredStatus,
+            @Param("earningLineType") PayoutLineType earningLineType
+    );
 }
