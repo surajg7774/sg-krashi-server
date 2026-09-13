@@ -22,12 +22,11 @@ import com.sgkrashi.payout.mapper.PayoutMapper;
 import com.sgkrashi.payout.repository.FarmerPayoutLineRepository;
 import com.sgkrashi.payout.repository.FarmerPayoutRepository;
 import com.sgkrashi.payout.service.PayoutService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -43,7 +42,6 @@ import java.util.stream.Collectors;
 @Service
 public class PayoutServiceImpl implements PayoutService {
 
-    private static final Logger log = LoggerFactory.getLogger(PayoutServiceImpl.class);
     private static final ZoneId PAYOUT_ZONE = ZoneId.of("Asia/Kolkata");
     private static final BigDecimal COMMISSION_RATE = new BigDecimal("0.05");
 
@@ -111,15 +109,25 @@ public class PayoutServiceImpl implements PayoutService {
      * untouched and a new negative CLAWBACK line is added to the farmer's
      * current open batch (creating one if none exists) instead.
      */
+    /**
+     * REQUIRES_NEW, not the default REQUIRED — this is called from {@code
+     * PayoutRefundEventListener}'s {@code @TransactionalEventListener(phase
+     * = AFTER_COMMIT)}, which Spring invokes synchronously from inside the
+     * ORIGINAL transaction's own {@code afterCompletion} synchronization
+     * callback (i.e. while {@code AbstractPlatformTransactionManager} is
+     * still unwinding that transaction, not truly "after" it in a resource
+     * sense). REQUIRED would try to detect/join that still-unwinding
+     * transaction's stale thread-bound state and fail at flush time with
+     * {@code InvalidDataAccessApiUsageException: no transaction is in
+     * progress} — confirmed live. REQUIRES_NEW forces a genuinely
+     * independent transaction, sidestepping that entirely.
+     */
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void handleOrderRefunded(Long orderId) {
-        log.info("handleOrderRefunded: called for orderId={}", orderId);
         List<OrderItem> cropListingItems = orderItemRepository.findAllByOrderId(orderId).stream()
                 .filter(item -> item.getItemType() == ItemType.CROP_LISTING)
                 .toList();
-        log.info("handleOrderRefunded: orderId={} has {} crop-listing item(s): {}",
-                orderId, cropListingItems.size(), cropListingItems.stream().map(OrderItem::getId).toList());
 
         for (OrderItem item : cropListingItems) {
             clawBackIfAlreadyLinked(item);
@@ -127,47 +135,32 @@ public class PayoutServiceImpl implements PayoutService {
     }
 
     private void clawBackIfAlreadyLinked(OrderItem item) {
-        try {
-            Optional<FarmerPayoutLine> earningLine = farmerPayoutLineRepository.findByOrderItemIdAndLineType(item.getId(), PayoutLineType.EARNING);
-            log.info("clawBackIfAlreadyLinked: orderItemId={} earningLine present={}", item.getId(), earningLine.isPresent());
-            if (earningLine.isEmpty()) {
-                return;
-            }
-            // Defensive idempotency guard — RefundServiceImpl already guarantees
-            // markRefunded (and therefore this event) fires at most once per
-            // refund, but this mirrors that class's own "defensive second layer,
-            // not the primary guarantee" style.
-            boolean alreadyClawedBack = farmerPayoutLineRepository.existsByOrderItemIdAndLineType(item.getId(), PayoutLineType.CLAWBACK);
-            log.info("clawBackIfAlreadyLinked: orderItemId={} alreadyClawedBack={}", item.getId(), alreadyClawedBack);
-            if (alreadyClawedBack) {
-                return;
-            }
-
-            FarmerPayoutLine original = earningLine.get();
-            log.info("clawBackIfAlreadyLinked: orderItemId={} original line id={} gross={}", item.getId(), original.getId(), original.getGrossAmount());
-            Long farmerId = item.getCropListing().getFarmerId();
-            log.info("clawBackIfAlreadyLinked: orderItemId={} farmerId={}", item.getId(), farmerId);
-            FarmerPayout openBatch = getOrCreateOpenBatch(farmerId);
-            log.info("clawBackIfAlreadyLinked: orderItemId={} openBatch id={} status={}", item.getId(), openBatch.getId(), openBatch.getStatus());
-
-            FarmerPayoutLine clawback = new FarmerPayoutLine();
-            clawback.setPayout(openBatch);
-            clawback.setOrderItem(item);
-            clawback.setLineType(PayoutLineType.CLAWBACK);
-            clawback.setGrossAmount(original.getGrossAmount().negate());
-            clawback.setCommissionAmount(original.getCommissionAmount().negate());
-            clawback.setNetAmount(original.getNetAmount().negate());
-            FarmerPayoutLine savedClawback = farmerPayoutLineRepository.saveAndFlush(clawback);
-            log.info("clawBackIfAlreadyLinked: orderItemId={} saved clawback line id={}", item.getId(), savedClawback.getId());
-            long countAfterFlush = farmerPayoutLineRepository.count();
-            log.info("clawBackIfAlreadyLinked: orderItemId={} total farmer_payout_lines rows after flush={}", item.getId(), countAfterFlush);
-
-            recomputeTotals(openBatch.getId());
-            log.info("clawBackIfAlreadyLinked: orderItemId={} recomputeTotals done", item.getId());
-        } catch (RuntimeException ex) {
-            log.error("clawBackIfAlreadyLinked: FAILED for orderItemId={}", item.getId(), ex);
-            throw ex;
+        Optional<FarmerPayoutLine> earningLine = farmerPayoutLineRepository.findByOrderItemIdAndLineType(item.getId(), PayoutLineType.EARNING);
+        if (earningLine.isEmpty()) {
+            return;
         }
+        // Defensive idempotency guard — RefundServiceImpl already guarantees
+        // markRefunded (and therefore this event) fires at most once per
+        // refund, but this mirrors that class's own "defensive second layer,
+        // not the primary guarantee" style.
+        if (farmerPayoutLineRepository.existsByOrderItemIdAndLineType(item.getId(), PayoutLineType.CLAWBACK)) {
+            return;
+        }
+
+        FarmerPayoutLine original = earningLine.get();
+        Long farmerId = item.getCropListing().getFarmerId();
+        FarmerPayout openBatch = getOrCreateOpenBatch(farmerId);
+
+        FarmerPayoutLine clawback = new FarmerPayoutLine();
+        clawback.setPayout(openBatch);
+        clawback.setOrderItem(item);
+        clawback.setLineType(PayoutLineType.CLAWBACK);
+        clawback.setGrossAmount(original.getGrossAmount().negate());
+        clawback.setCommissionAmount(original.getCommissionAmount().negate());
+        clawback.setNetAmount(original.getNetAmount().negate());
+        farmerPayoutLineRepository.save(clawback);
+
+        recomputeTotals(openBatch.getId());
     }
 
     @Override
