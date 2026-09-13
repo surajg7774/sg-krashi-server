@@ -22,6 +22,8 @@ import com.sgkrashi.payout.mapper.PayoutMapper;
 import com.sgkrashi.payout.repository.FarmerPayoutLineRepository;
 import com.sgkrashi.payout.repository.FarmerPayoutRepository;
 import com.sgkrashi.payout.service.PayoutService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -41,6 +43,7 @@ import java.util.stream.Collectors;
 @Service
 public class PayoutServiceImpl implements PayoutService {
 
+    private static final Logger log = LoggerFactory.getLogger(PayoutServiceImpl.class);
     private static final ZoneId PAYOUT_ZONE = ZoneId.of("Asia/Kolkata");
     private static final BigDecimal COMMISSION_RATE = new BigDecimal("0.05");
 
@@ -111,9 +114,12 @@ public class PayoutServiceImpl implements PayoutService {
     @Override
     @Transactional
     public void handleOrderRefunded(Long orderId) {
+        log.info("handleOrderRefunded: called for orderId={}", orderId);
         List<OrderItem> cropListingItems = orderItemRepository.findAllByOrderId(orderId).stream()
                 .filter(item -> item.getItemType() == ItemType.CROP_LISTING)
                 .toList();
+        log.info("handleOrderRefunded: orderId={} has {} crop-listing item(s): {}",
+                orderId, cropListingItems.size(), cropListingItems.stream().map(OrderItem::getId).toList());
 
         for (OrderItem item : cropListingItems) {
             clawBackIfAlreadyLinked(item);
@@ -122,6 +128,7 @@ public class PayoutServiceImpl implements PayoutService {
 
     private void clawBackIfAlreadyLinked(OrderItem item) {
         Optional<FarmerPayoutLine> earningLine = farmerPayoutLineRepository.findByOrderItemIdAndLineType(item.getId(), PayoutLineType.EARNING);
+        log.info("clawBackIfAlreadyLinked: orderItemId={} earningLine present={}", item.getId(), earningLine.isPresent());
         if (earningLine.isEmpty()) {
             return;
         }
@@ -130,6 +137,7 @@ public class PayoutServiceImpl implements PayoutService {
         // refund, but this mirrors that class's own "defensive second layer,
         // not the primary guarantee" style.
         if (farmerPayoutLineRepository.existsByOrderItemIdAndLineType(item.getId(), PayoutLineType.CLAWBACK)) {
+            log.info("clawBackIfAlreadyLinked: orderItemId={} already has a CLAWBACK line, skipping", item.getId());
             return;
         }
 

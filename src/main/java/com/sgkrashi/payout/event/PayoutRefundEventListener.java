@@ -2,6 +2,8 @@ package com.sgkrashi.payout.event;
 
 import com.sgkrashi.notification.event.RefundProcessedEvent;
 import com.sgkrashi.payout.service.PayoutService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -22,6 +24,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 @Component
 public class PayoutRefundEventListener {
 
+    private static final Logger log = LoggerFactory.getLogger(PayoutRefundEventListener.class);
     private static final String ORDER_PAYABLE_TYPE = "ORDER";
 
     private final PayoutService payoutService;
@@ -32,6 +35,7 @@ public class PayoutRefundEventListener {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onRefundProcessed(RefundProcessedEvent event) {
+        log.info("onRefundProcessed: received event payableType={} payableId={}", event.payableType(), event.payableId());
         // Bookings are out of scope for this payout system (see
         // FarmerPayout's migration note) — nothing to claw back for one.
         if (!ORDER_PAYABLE_TYPE.equals(event.payableType())) {
