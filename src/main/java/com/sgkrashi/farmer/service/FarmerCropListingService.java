@@ -4,6 +4,8 @@ import com.sgkrashi.common.dto.PaginatedResponse;
 import com.sgkrashi.cropmarketplace.dto.response.CropListingDetailResponse;
 import com.sgkrashi.cropmarketplace.dto.response.CropListingSummaryResponse;
 import com.sgkrashi.farmer.dto.request.FarmerCropListingRequest;
+import com.sgkrashi.media.dto.response.MediaAssetResponse;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * Ownership-scoping layer on top of {@code CropListingService} (Module 7/15)
@@ -26,4 +28,15 @@ public interface FarmerCropListingService {
 
     /** @throws com.sgkrashi.common.exception.ResourceNotFoundException on ownership mismatch — see {@link #getOwnListing}. */
     void deactivateOwnListing(Long farmerId, Long id);
+
+    /**
+     * Uploads a photo for one of the Farmer's own crop listings. Reuses
+     * {@code MediaService}'s existing validation (size limit, declared
+     * Content-Type, and magic-byte detection) and whichever {@code
+     * StorageProvider} is active verbatim — no new upload/validation logic.
+     *
+     * @throws com.sgkrashi.common.exception.ResourceNotFoundException on ownership mismatch — see {@link #getOwnListing}
+     * @throws com.sgkrashi.common.exception.ValidationException if the file fails {@code MediaService}'s validation
+     */
+    MediaAssetResponse uploadOwnListingMedia(Long farmerId, Long id, MultipartFile file);
 }

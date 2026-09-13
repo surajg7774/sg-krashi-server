@@ -7,8 +7,10 @@ import com.sgkrashi.cropmarketplace.dto.response.CropListingDetailResponse;
 import com.sgkrashi.cropmarketplace.dto.response.CropListingSummaryResponse;
 import com.sgkrashi.farmer.dto.request.FarmerCropListingRequest;
 import com.sgkrashi.farmer.service.FarmerCropListingService;
+import com.sgkrashi.media.dto.response.MediaAssetResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 /** Farmer-only write surface for a Farmer's own Crop Listings — see {@code FarmerCropListingService}'s Javadoc for the ownership-scoping approach. */
 @RestController
@@ -73,5 +76,22 @@ public class FarmerCropListingController {
         Long farmerId = currentUserProvider.getCurrentUserId();
         farmerCropListingService.deactivateOwnListing(farmerId, id);
         return ResponseEntity.ok(ApiResponse.success(null, "Crop listing deactivated"));
+    }
+
+    /**
+     * Farmer-scoped equivalent of {@code MediaController.upload} — same
+     * validation and storage path, just ownership-checked against this
+     * listing before anything is stored. A cross-farmer attempt (an id that
+     * exists but isn't this farmer's) 404s the same way every other
+     * ownership-scoped endpoint on this controller does.
+     */
+    @PostMapping(value = "/{id}/media", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<MediaAssetResponse>> uploadMedia(
+            @PathVariable Long id,
+            @RequestParam("file") MultipartFile file
+    ) {
+        Long farmerId = currentUserProvider.getCurrentUserId();
+        MediaAssetResponse response = farmerCropListingService.uploadOwnListingMedia(farmerId, id, file);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response, "Photo uploaded"));
     }
 }

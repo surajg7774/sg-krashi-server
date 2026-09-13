@@ -10,8 +10,11 @@ import com.sgkrashi.cropmarketplace.repository.CropListingRepository;
 import com.sgkrashi.cropmarketplace.service.CropListingService;
 import com.sgkrashi.farmer.dto.request.FarmerCropListingRequest;
 import com.sgkrashi.farmer.service.FarmerCropListingService;
+import com.sgkrashi.media.dto.response.MediaAssetResponse;
+import com.sgkrashi.media.service.MediaService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * Wraps {@link CropListingService} rather than duplicating its create/update/
@@ -26,12 +29,21 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class FarmerCropListingServiceImpl implements FarmerCropListingService {
 
+    /** Same literal every other module (Order/Cart/Recommendation/CropListingService) already uses for this owner type — must match exactly, since {@code MediaAssetRepository} lookups are a free-text string match, not a real FK. */
+    private static final String CROP_LISTING_OWNER_TYPE = "CROP_LISTING";
+
     private final CropListingService cropListingService;
     private final CropListingRepository cropListingRepository;
+    private final MediaService mediaService;
 
-    public FarmerCropListingServiceImpl(CropListingService cropListingService, CropListingRepository cropListingRepository) {
+    public FarmerCropListingServiceImpl(
+            CropListingService cropListingService,
+            CropListingRepository cropListingRepository,
+            MediaService mediaService
+    ) {
         this.cropListingService = cropListingService;
         this.cropListingRepository = cropListingRepository;
+        this.mediaService = mediaService;
     }
 
     @Override
@@ -63,6 +75,18 @@ public class FarmerCropListingServiceImpl implements FarmerCropListingService {
     public void deactivateOwnListing(Long farmerId, Long id) {
         requireOwnership(farmerId, id);
         cropListingService.deactivateCropListing(id);
+    }
+
+    /**
+     * Ownership check first (404 on mismatch, same as every other method
+     * here), then delegates straight to {@code MediaService.upload} — the
+     * exact same validation and storage path Admin catalog uploads use,
+     * just with {@code ownerId} pinned to a listing this Farmer actually owns.
+     */
+    @Override
+    public MediaAssetResponse uploadOwnListingMedia(Long farmerId, Long id, MultipartFile file) {
+        requireOwnership(farmerId, id);
+        return mediaService.upload(file, CROP_LISTING_OWNER_TYPE, id);
     }
 
     private CropListing requireOwnership(Long farmerId, Long id) {
