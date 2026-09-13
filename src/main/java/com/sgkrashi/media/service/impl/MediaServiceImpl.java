@@ -41,11 +41,18 @@ public class MediaServiceImpl implements MediaService {
 
         String url = storageProvider.store(file);
 
+        // Was hardcoded to 0 for every upload, so any listing with more than
+        // one photo ended up with every row tied at sortOrder=0 — harmless
+        // until reorder existed, but a tie can never be broken by a swap
+        // (swapping two equal values leaves them equal), which made reorder
+        // silently do nothing for exactly the listings that most needed it.
+        int nextSortOrder = mediaAssetRepository.findByOwnerTypeAndOwnerIdOrderBySortOrderAsc(ownerType, ownerId).size();
+
         MediaAsset asset = new MediaAsset();
         asset.setOwnerType(ownerType);
         asset.setOwnerId(ownerId);
         asset.setUrl(url);
-        asset.setSortOrder(0);
+        asset.setSortOrder(nextSortOrder);
 
         MediaAsset saved = mediaAssetRepository.save(asset);
         return mediaAssetMapper.toResponse(saved);
