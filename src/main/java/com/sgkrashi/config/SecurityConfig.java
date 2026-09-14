@@ -85,7 +85,17 @@ public class SecurityConfig {
             // RecommendationController's Javadoc) since it reads the caller's
             // own order history.
             "/api/v1/recommendations/similar",
-            "/api/v1/recommendations/frequently-bought-with"
+            "/api/v1/recommendations/frequently-bought-with",
+            // Mandi Price Tracker and the Government Scheme Info Hub — both
+            // read-only reference data, no login required to view (Facility
+            // Features #1 and #2). Real bug caught while verifying against
+            // the deployed backend: the controllers themselves have no
+            // @PreAuthorize (by design), but without an explicit entry here
+            // the default anyRequest().authenticated() rule below still
+            // blocked every one of these — same class of gap the
+            // knowledge-base wildcard comment above already warns about.
+            "/api/v1/mandi/**",
+            "/api/v1/schemes/**"
     };
 
     // POST-only, scoped by method for the same reason as PUBLIC_GET_ENDPOINTS —
