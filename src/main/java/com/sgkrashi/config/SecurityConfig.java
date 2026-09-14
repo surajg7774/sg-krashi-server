@@ -95,7 +95,10 @@ public class SecurityConfig {
             // blocked every one of these — same class of gap the
             // knowledge-base wildcard comment above already warns about.
             "/api/v1/mandi/**",
-            "/api/v1/schemes/**"
+            "/api/v1/schemes/**",
+            // Homepage weather widget and the /weather page — same "no
+            // login required to view" reasoning as Mandi/Schemes above.
+            "/api/v1/weather/**"
     };
 
     // POST-only, scoped by method for the same reason as PUBLIC_GET_ENDPOINTS —

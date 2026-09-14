@@ -6,6 +6,8 @@ import com.sgkrashi.chatassistant.exception.ChatAssistantUnavailableException;
 import com.sgkrashi.chatassistant.exception.ChatQuotaExceededException;
 import com.sgkrashi.cropdoctor.exception.AiQuotaExceededException;
 import com.sgkrashi.cropdoctor.exception.AiServiceUnavailableException;
+import com.sgkrashi.weather.client.GeocodingUnavailableException;
+import com.sgkrashi.weather.exception.WeatherDataUnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -105,6 +107,20 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleChatAssistantUnavailable(ChatAssistantUnavailableException ex) {
         log.warn("Chat assistant service call failed: {}", ex.getMessage());
         ApiErrorResponse body = ApiErrorResponse.of("CHAT_ASSISTANT_UNAVAILABLE", ex.getMessage(), List.of());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+    }
+
+    @ExceptionHandler(WeatherDataUnavailableException.class)
+    public ResponseEntity<ApiErrorResponse> handleWeatherDataUnavailable(WeatherDataUnavailableException ex) {
+        log.warn("Weather data unavailable: {}", ex.getMessage());
+        ApiErrorResponse body = ApiErrorResponse.of("WEATHER_UNAVAILABLE", ex.getMessage(), List.of());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+    }
+
+    @ExceptionHandler(GeocodingUnavailableException.class)
+    public ResponseEntity<ApiErrorResponse> handleGeocodingUnavailable(GeocodingUnavailableException ex) {
+        log.warn("Geocoding unavailable: {}", ex.getMessage());
+        ApiErrorResponse body = ApiErrorResponse.of("GEOCODING_UNAVAILABLE", ex.getMessage(), List.of());
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
     }
 
