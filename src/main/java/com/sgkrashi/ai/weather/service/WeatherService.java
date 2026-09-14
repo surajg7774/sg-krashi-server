@@ -22,15 +22,27 @@ import java.util.Optional;
  * thrown, so a weather outage can only ever mean "proceed without weather
  * grounding" — never a failed scan or a failed chat reply.
  *
- * <p>No location parameter for V1, deliberately: per-user/per-listing
- * location and geocoding are explicitly out of scope for this feature (the
- * whole platform is one farm today), so a parameter nobody would ever vary
- * would just be a confusing, dishonest API surface. The natural extension
- * point — passing a real location once Module 20's Farmer Portal has
- * geographically diverse farmer-submitted listings — is adding that
- * parameter back exactly here, when it's actually needed.
+ * <p>No location parameter on {@link #fetchCurrentWeather()}, deliberately:
+ * per-user/per-listing location and geocoding were explicitly out of scope
+ * when that method was written (the whole platform was one farm then), so a
+ * parameter nobody would ever vary would just have been a confusing,
+ * dishonest API surface. {@link #fetchWeather(double, double)} below is
+ * exactly the extension point that Javadoc anticipated — added for the
+ * weather advisory job (Facility Feature #3), once farmers actually have
+ * their own geographically diverse locations via {@code FarmerProfile}.
  */
 public interface WeatherService {
 
     Optional<WeatherSnapshot> fetchCurrentWeather();
+
+    /**
+     * Same contract as {@link #fetchCurrentWeather()} (never throws, {@link
+     * Optional#empty()} on any failure) but for an arbitrary location —
+     * used by the daily weather advisory job, one call per opted-in
+     * farmer's own coordinates. Deliberately uncached (unlike {@link
+     * #fetchCurrentWeather()}'s single-slot 45-minute cache, which assumes
+     * one fixed location) — a daily scheduled job across many distinct
+     * farmer locations isn't a hot path worth caching.
+     */
+    Optional<WeatherSnapshot> fetchWeather(double latitude, double longitude);
 }

@@ -73,6 +73,16 @@ app:
     # application-local.yml. Get a free key at aistudio.google.com/apikey.
     api-key: ${GEMINI_API_KEY}
     model: ${GEMINI_MODEL:gemini-3.6-flash}
+  mandi:
+    # Empty default, deliberately — unlike gemini/jwt/razorpay above, an
+    # environment without MANDI_API_KEY set (e.g. local dev) must still boot
+    # cleanly. MandiPriceApiClient.isConfigured()/MandiPriceSyncJob treat a
+    # blank key as the expected, routine state, not a startup failure.
+    api-key: ${MANDI_API_KEY:}
+    base-url: ${MANDI_BASE_URL:https://api.data.gov.in}
+    # "Current daily price of various commodities from various markets
+    # (Mandi)" — Ministry of Agriculture & Farmers Welfare / Agmarknet.
+    resource-id: ${MANDI_RESOURCE_ID:9ef84268-d588-465a-a308-a864a43d0070}
 
 crop-doctor:
   # gemini (default) or local — see CropAnalysisProvider implementations.

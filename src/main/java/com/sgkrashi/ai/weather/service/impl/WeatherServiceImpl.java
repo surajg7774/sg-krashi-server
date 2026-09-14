@@ -63,6 +63,16 @@ public class WeatherServiceImpl implements WeatherService {
         }
     }
 
+    @Override
+    public Optional<WeatherSnapshot> fetchWeather(double latitude, double longitude) {
+        try {
+            return Optional.of(weatherApiClient.fetch(latitude, longitude));
+        } catch (WeatherUnavailableException ex) {
+            log.warn("Weather unavailable for ({}, {}): {}", latitude, longitude, ex.getMessage());
+            return Optional.empty();
+        }
+    }
+
     private record CachedSnapshot(WeatherSnapshot snapshot, Instant fetchedAt) {
     }
 }

@@ -68,7 +68,10 @@ public class WeatherApiClient {
                             .queryParam("latitude", latitude)
                             .queryParam("longitude", longitude)
                             .queryParam("current", "temperature_2m,relative_humidity_2m,precipitation")
-                            .queryParam("daily", "precipitation_sum")
+                            // temperature_2m_min added for the weather advisory job's frost-risk
+                            // rule (Facility Feature #3) — precipitation_sum already covered the
+                            // rain-forecast/spraying rule via forecastSummary's tomorrow-index logic.
+                            .queryParam("daily", "precipitation_sum,temperature_2m_min")
                             .queryParam("past_days", PAST_DAYS)
                             .queryParam("forecast_days", FORECAST_DAYS)
                             .queryParam("timezone", "auto")
@@ -106,15 +109,23 @@ public class WeatherApiClient {
                     .sum();
 
             int tomorrowIndex = PAST_DAYS + 1;
-            String forecastSummary = tomorrowIndex < dailyPrecipitation.size() && dailyPrecipitation.get(tomorrowIndex) > 1.0
-                    ? "Rain expected tomorrow (~%.1fmm)".formatted(dailyPrecipitation.get(tomorrowIndex))
+            double tomorrowPrecipitation = tomorrowIndex < dailyPrecipitation.size() ? dailyPrecipitation.get(tomorrowIndex) : 0.0;
+            String forecastSummary = tomorrowPrecipitation > 1.0
+                    ? "Rain expected tomorrow (~%.1fmm)".formatted(tomorrowPrecipitation)
                     : "No significant rain expected tomorrow";
+
+            List<Double> dailyMinTemp = response.daily().temperature2mMin();
+            double tomorrowMinTemp = dailyMinTemp != null && tomorrowIndex < dailyMinTemp.size()
+                    ? dailyMinTemp.get(tomorrowIndex)
+                    : response.current().temperature2m();
 
             return new WeatherSnapshot(
                     response.current().temperature2m(),
                     response.current().relativeHumidity2m(),
                     recentRainfall,
-                    forecastSummary);
+                    forecastSummary,
+                    tomorrowMinTemp,
+                    tomorrowPrecipitation);
         } catch (Exception ex) {
             log.warn("Could not parse Open-Meteo response: {}", responseBody, ex);
             throw new WeatherUnavailableException("Weather API returned an invalid response", ex);
@@ -132,7 +143,10 @@ public class WeatherApiClient {
         }
 
         @JsonIgnoreProperties(ignoreUnknown = true)
-        record Daily(@JsonProperty("precipitation_sum") List<Double> precipitationSum) {
+        record Daily(
+                @JsonProperty("precipitation_sum") List<Double> precipitationSum,
+                @JsonProperty("temperature_2m_min") List<Double> temperature2mMin
+        ) {
         }
     }
 }

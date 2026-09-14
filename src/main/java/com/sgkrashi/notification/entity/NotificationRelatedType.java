@@ -4,5 +4,6 @@ package com.sgkrashi.notification.entity;
 public enum NotificationRelatedType {
     ORDER,
     BOOKING,
-    INQUIRY
+    INQUIRY,
+    FARMER_PROFILE
 }
