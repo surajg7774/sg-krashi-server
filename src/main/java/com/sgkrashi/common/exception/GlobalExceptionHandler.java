@@ -20,6 +20,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.List;
 
@@ -32,6 +33,22 @@ import java.util.List;
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    /**
+     * Spring's own "no handler matches this URL" case (e.g. a typo'd path, or
+     * a bare controller-level path hit instead of its actual @GetMapping
+     * sub-path) — since Spring Framework 6.1, this is what the default
+     * catch-all resource handler throws instead of a plain 404, and without
+     * a specific handler here it was falling through to {@link
+     * #handleUnexpected}'s generic 500. A request to a genuinely nonexistent
+     * route is a routine 404, not a server error.
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleNoResourceFound(NoResourceFoundException ex) {
+        log.warn("No handler for {} {}", ex.getHttpMethod(), ex.getResourcePath());
+        ApiErrorResponse body = ApiErrorResponse.of("NOT_FOUND", "The requested resource was not found", List.of());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+    }
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ApiErrorResponse> handleResourceNotFound(ResourceNotFoundException ex) {
