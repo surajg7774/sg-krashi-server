@@ -77,6 +77,16 @@ public class NotificationServiceImpl implements NotificationService {
      * method's own try/catch, leaving no exception to log — a silent
      * failure with no evidence, the same class of bug as Module 13's, just
      * surfacing on the sender side instead of the persistence side.
+     *
+     * <p>Confirmed via Brevo's own dashboard afterward: the specific
+     * booking-cancellation email that prompted this change was actually a
+     * Brevo-side soft bounce against a mailinator.com test recipient
+     * (rapid automated sends to a disposable-mail domain in one test
+     * session), not this method failing — so that particular symptom
+     * wasn't actually evidence of the bug described above. Left as-is
+     * anyway: holding a DB transaction open across a real external HTTP
+     * call is a genuine anti-pattern independent of what triggered the
+     * investigation, and the fix costs nothing to keep.
      */
     @Override
     public void notify(
