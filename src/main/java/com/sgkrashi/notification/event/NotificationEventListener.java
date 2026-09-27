@@ -125,4 +125,26 @@ public class NotificationEventListener {
                 NotificationRelatedType.INQUIRY,
                 event.inquiryId());
     }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onPayoutApproved(PayoutApprovedEvent event) {
+        notificationService.notify(
+                event.farmerId(),
+                NotificationType.PAYOUT_APPROVED,
+                "Payout Approved",
+                "Your payout has been approved and is awaiting bank transfer.",
+                NotificationRelatedType.PAYOUT,
+                event.payoutId());
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onPayoutPaid(PayoutPaidEvent event) {
+        notificationService.notify(
+                event.farmerId(),
+                NotificationType.PAYOUT_PAID,
+                "Payout Paid",
+                "Your payout has been paid out.",
+                NotificationRelatedType.PAYOUT,
+                event.payoutId());
+    }
 }

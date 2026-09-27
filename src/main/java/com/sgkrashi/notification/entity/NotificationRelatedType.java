@@ -5,5 +5,6 @@ public enum NotificationRelatedType {
     ORDER,
     BOOKING,
     INQUIRY,
-    FARMER_PROFILE
+    FARMER_PROFILE,
+    PAYOUT
 }

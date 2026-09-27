@@ -22,6 +22,9 @@ import com.sgkrashi.payout.mapper.PayoutMapper;
 import com.sgkrashi.payout.repository.FarmerPayoutLineRepository;
 import com.sgkrashi.payout.repository.FarmerPayoutRepository;
 import com.sgkrashi.payout.service.PayoutService;
+import com.sgkrashi.notification.event.PayoutApprovedEvent;
+import com.sgkrashi.notification.event.PayoutPaidEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -50,19 +53,22 @@ public class PayoutServiceImpl implements PayoutService {
     private final OrderItemRepository orderItemRepository;
     private final UserRepository userRepository;
     private final PayoutMapper payoutMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     public PayoutServiceImpl(
             FarmerPayoutRepository farmerPayoutRepository,
             FarmerPayoutLineRepository farmerPayoutLineRepository,
             OrderItemRepository orderItemRepository,
             UserRepository userRepository,
-            PayoutMapper payoutMapper
+            PayoutMapper payoutMapper,
+            ApplicationEventPublisher eventPublisher
     ) {
         this.farmerPayoutRepository = farmerPayoutRepository;
         this.farmerPayoutLineRepository = farmerPayoutLineRepository;
         this.orderItemRepository = orderItemRepository;
         this.userRepository = userRepository;
         this.payoutMapper = payoutMapper;
+        this.eventPublisher = eventPublisher;
     }
 
     /** A line's gross amount split into (gross, commission, net) at the flat platform rate. */
@@ -231,6 +237,7 @@ public class PayoutServiceImpl implements PayoutService {
             payout.setApprovedBy(adminId);
             payout.setApprovedAt(Instant.now());
             farmerPayoutRepository.save(payout);
+            eventPublisher.publishEvent(new PayoutApprovedEvent(payout.getId(), payout.getFarmerId()));
         }
         return getDetailForAdmin(payoutId);
     }
@@ -246,6 +253,7 @@ public class PayoutServiceImpl implements PayoutService {
             payout.setStatus(PayoutStatus.PAID);
             payout.setPaidAt(Instant.now());
             farmerPayoutRepository.save(payout);
+            eventPublisher.publishEvent(new PayoutPaidEvent(payout.getId(), payout.getFarmerId()));
         }
         return getDetailForAdmin(payoutId);
     }
