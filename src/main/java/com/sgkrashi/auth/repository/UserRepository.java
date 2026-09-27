@@ -16,6 +16,8 @@ public interface UserRepository extends JpaRepository<User, Long>, JpaSpecificat
 
     boolean existsByEmail(String email);
 
+    Optional<User> findByGoogleId(String googleId);
+
     // roles is @ManyToMany(fetch = EAGER) already, but @EntityGraph here keeps
     // the join in the SAME query as the Specification-filtered page, rather
     // than triggering a second eager-fetch query per row.

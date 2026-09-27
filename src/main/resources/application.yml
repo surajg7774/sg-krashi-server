@@ -68,6 +68,25 @@ app:
     api-key: ${AI_SERVICE_API_KEY}
   chat-assistant:
     enabled: ${CHAT_ASSISTANT_ENABLED:true}
+  google:
+    # Empty default — see FirebaseConfig/FcmNotificationSender's identical
+    # reasoning just below: this must boot fine before a real Google Cloud
+    # project exists. GoogleAuthServiceImpl.isConfigured() is the actual
+    # gate; POST /auth/mobile/google returns a clean 503
+    # (GOOGLE_SIGN_IN_NOT_CONFIGURED) if hit before this is set, rather than
+    # failing at boot. This is the WEB OAuth client ID specifically — not
+    # the Android/iOS ones — see GoogleAuthServiceImpl's constructor Javadoc.
+    web-client-id: ${GOOGLE_WEB_CLIENT_ID:}
+  fcm:
+    # Defaults to false/empty on purpose — FcmNotificationSender/FirebaseConfig
+    # are only created when this is explicitly true (see FirebaseConfig's
+    # Javadoc for why: a required-with-no-default service-account property
+    # here would crash the whole app's boot the moment this feature was
+    # merged, before Firebase even exists). Set FCM_ENABLED=true and
+    # FIREBASE_SERVICE_ACCOUNT_JSON (the full service account JSON, as a
+    # single-line string) once a real Firebase project is set up.
+    enabled: ${FCM_ENABLED:false}
+    service-account-json: ${FIREBASE_SERVICE_ACCOUNT_JSON:}
   gemini:
     # No default, same as JWT_SECRET/RAZORPAY_* above — set via
     # application-local.yml. Get a free key at aistudio.google.com/apikey.

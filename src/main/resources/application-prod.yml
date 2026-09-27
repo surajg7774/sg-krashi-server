@@ -102,6 +102,18 @@ app:
     # frontend (a separate Vercel deployment with no access to Railway env
     # vars) can hide the floating button entirely rather than just disabling it.
     enabled: ${CHAT_ASSISTANT_ENABLED:true}
+  fcm:
+    # Same reason every other feature flag/secret above is explicitly
+    # repeated here rather than relying on the base application.yml's
+    # default alone — confirmed live: app.fcm.enabled only actually took
+    # effect once duplicated into this profile-specific file, matching
+    # every other entry in this block.
+    enabled: ${FCM_ENABLED:false}
+    service-account-json: ${FIREBASE_SERVICE_ACCOUNT_JSON:}
+  google:
+    # Explicitly repeated here too, learned directly from the app.fcm.enabled
+    # lesson above rather than risking the same silent-no-effect mistake twice.
+    web-client-id: ${GOOGLE_WEB_CLIENT_ID:}
 
 crop-doctor:
   provider: ${CROP_DOCTOR_PROVIDER:gemini}

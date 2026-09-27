@@ -16,6 +16,7 @@ import com.sgkrashi.auth.repository.UserRepository;
 import com.sgkrashi.auth.security.JwtTokenProvider;
 import com.sgkrashi.auth.service.AuthResult;
 import com.sgkrashi.auth.service.AuthService;
+import com.sgkrashi.auth.service.GoogleAuthService;
 import com.sgkrashi.common.exception.DuplicateResourceException;
 import com.sgkrashi.common.exception.InvalidTokenException;
 import com.sgkrashi.notification.entity.Notification;
@@ -55,6 +56,7 @@ public class AuthServiceImpl implements AuthService {
     private final JwtTokenProvider jwtTokenProvider;
     private final UserMapper userMapper;
     private final List<NotificationSender> notificationSenders;
+    private final GoogleAuthService googleAuthService;
     private final String frontendUrl;
     private final SecureRandom secureRandom = new SecureRandom();
 
@@ -67,6 +69,7 @@ public class AuthServiceImpl implements AuthService {
             JwtTokenProvider jwtTokenProvider,
             UserMapper userMapper,
             List<NotificationSender> notificationSenders,
+            GoogleAuthService googleAuthService,
             @Value("${app.frontend-url}") String frontendUrl
     ) {
         this.userRepository = userRepository;
@@ -77,6 +80,7 @@ public class AuthServiceImpl implements AuthService {
         this.jwtTokenProvider = jwtTokenProvider;
         this.userMapper = userMapper;
         this.notificationSenders = notificationSenders;
+        this.googleAuthService = googleAuthService;
         this.frontendUrl = frontendUrl;
     }
 
@@ -190,6 +194,13 @@ public class AuthServiceImpl implements AuthService {
                 .orElseThrow(() -> new IllegalStateException(
                         "User authenticated but could not be reloaded: " + request.email()));
 
+        return issueTokens(user);
+    }
+
+    @Override
+    @Transactional
+    public AuthResult loginWithGoogle(String idToken) {
+        User user = googleAuthService.findOrCreateUser(idToken);
         return issueTokens(user);
     }
 

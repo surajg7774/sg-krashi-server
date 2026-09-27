@@ -1,6 +1,9 @@
 package com.sgkrashi.common.exception;
 
 import com.sgkrashi.common.dto.ApiErrorResponse;
+import com.sgkrashi.auth.exception.GoogleOnlyAccountException;
+import com.sgkrashi.auth.exception.GoogleSignInNotConfiguredException;
+import com.sgkrashi.auth.exception.InvalidGoogleTokenException;
 import com.sgkrashi.chatassistant.exception.ChatAssistantDisabledException;
 import com.sgkrashi.chatassistant.exception.ChatAssistantUnavailableException;
 import com.sgkrashi.chatassistant.exception.ChatQuotaExceededException;
@@ -12,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.DisabledException;
@@ -174,6 +178,27 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(body);
     }
 
+    @ExceptionHandler(GoogleOnlyAccountException.class)
+    public ResponseEntity<ApiErrorResponse> handleGoogleOnlyAccount(GoogleOnlyAccountException ex) {
+        log.warn("Password login attempted on a Google-only account");
+        ApiErrorResponse body = ApiErrorResponse.of("GOOGLE_ONLY_ACCOUNT", ex.getMessage(), List.of());
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(body);
+    }
+
+    @ExceptionHandler(InvalidGoogleTokenException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidGoogleToken(InvalidGoogleTokenException ex) {
+        log.warn("Google sign-in failed: {}", ex.getMessage());
+        ApiErrorResponse body = ApiErrorResponse.of("INVALID_GOOGLE_TOKEN", ex.getMessage(), List.of());
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(body);
+    }
+
+    @ExceptionHandler(GoogleSignInNotConfiguredException.class)
+    public ResponseEntity<ApiErrorResponse> handleGoogleSignInNotConfigured(GoogleSignInNotConfiguredException ex) {
+        log.warn("Google sign-in attempted before configuration: {}", ex.getMessage());
+        ApiErrorResponse body = ApiErrorResponse.of("GOOGLE_SIGN_IN_NOT_CONFIGURED", ex.getMessage(), List.of());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ApiErrorResponse> handleAccessDenied(AccessDeniedException ex) {
         log.warn("Access denied: {}", ex.getMessage());
@@ -213,6 +238,24 @@ public class GlobalExceptionHandler {
         log.warn("Missing required request parameter: {}", ex.getParameterName());
         ApiErrorResponse body = ApiErrorResponse.of(
                 "VALIDATION_ERROR", "Missing required parameter: " + ex.getParameterName(), List.of());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    /**
+     * A malformed request body — most commonly an unrecognized enum value
+     * (e.g. {@code platform: "WINDOWS_PHONE"} against {@code
+     * DeviceTokenRequest}'s {@code DevicePlatform}) — throws this during
+     * Jackson deserialization, before any {@code @Valid} validation even
+     * runs, so {@code MethodArgumentNotValidException} above never catches
+     * it. Previously uncaught here, same class of gap as {@code
+     * MissingServletRequestParameterException} below: found via the new
+     * device-token endpoint, but general — any endpoint accepting an enum
+     * in its request body benefits.
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiErrorResponse> handleMalformedRequestBody(HttpMessageNotReadableException ex) {
+        log.warn("Malformed request body: {}", ex.getMessage());
+        ApiErrorResponse body = ApiErrorResponse.of("VALIDATION_ERROR", "Request body is malformed or contains an invalid value", List.of());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 

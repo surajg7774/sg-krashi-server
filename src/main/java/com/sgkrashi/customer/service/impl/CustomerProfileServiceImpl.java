@@ -1,6 +1,7 @@
 package com.sgkrashi.customer.service.impl;
 
 import com.sgkrashi.auth.entity.User;
+import com.sgkrashi.auth.exception.GoogleOnlyAccountException;
 import com.sgkrashi.auth.repository.UserRepository;
 import com.sgkrashi.auth.security.CurrentUserProvider;
 import com.sgkrashi.customer.dto.request.ChangePasswordRequest;
@@ -65,6 +66,16 @@ public class CustomerProfileServiceImpl implements CustomerProfileService {
     @Transactional
     public void changePassword(ChangePasswordRequest request) {
         User user = currentUserProvider.getCurrentUser();
+        // A Google-only account (see User's Javadoc) has no current password
+        // to verify — BCryptPasswordEncoder.matches(raw, null) just returns
+        // false rather than throwing, which would otherwise surface here as
+        // a misleading "Current password is incorrect" (there never was
+        // one to get right), same class of gap as CustomUserDetailsService's
+        // login-path fix.
+        if (user.getPasswordHash() == null) {
+            throw new GoogleOnlyAccountException(
+                    "This account uses Google Sign-In and has no password to change.");
+        }
         if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
             throw new ValidationException("Current password is incorrect");
         }

@@ -1,5 +1,6 @@
 package com.sgkrashi.auth.controller;
 
+import com.sgkrashi.auth.dto.request.GoogleAuthRequest;
 import com.sgkrashi.auth.dto.request.LoginRequest;
 import com.sgkrashi.auth.dto.request.RefreshTokenRequest;
 import com.sgkrashi.auth.dto.response.MobileAuthResponse;
@@ -55,6 +56,18 @@ public class MobileAuthController {
     ) {
         enforceRateLimit(servletRequest);
         AuthResult result = authService.login(request);
+        MobileAuthResponse body = new MobileAuthResponse(
+                result.response().accessToken(), result.rawRefreshToken(), result.response().user());
+        return ResponseEntity.ok(ApiResponse.success(body, "Login successful"));
+    }
+
+    // No rate limiting here either — LoginRateLimiter exists specifically to
+    // slow down password-guessing, which doesn't apply to a Google ID token
+    // (nothing to "guess"; an invalid one just fails verification, same as
+    // any malformed credential elsewhere in this app).
+    @PostMapping("/google")
+    public ResponseEntity<ApiResponse<MobileAuthResponse>> google(@Valid @RequestBody GoogleAuthRequest request) {
+        AuthResult result = authService.loginWithGoogle(request.idToken());
         MobileAuthResponse body = new MobileAuthResponse(
                 result.response().accessToken(), result.rawRefreshToken(), result.response().user());
         return ResponseEntity.ok(ApiResponse.success(body, "Login successful"));

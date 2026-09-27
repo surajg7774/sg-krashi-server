@@ -16,6 +16,14 @@ import java.util.Set;
  * A platform account. The password is never stored or transmitted in plain text —
  * only {@link #passwordHash} (BCrypt) is persisted, and it is never included in any
  * outbound DTO; responses must always go through {@code UserMapper}.
+ *
+ * <p>{@link #passwordHash} is nullable — a Google-only account (created via
+ * "Sign in with Google", never given a password) has none at all. {@link
+ * #googleId} is Google's stable, never-reused "sub" claim; see {@code
+ * GoogleAuthServiceImpl} for how it's resolved and {@code
+ * CustomUserDetailsService} for why a null password must be checked
+ * explicitly before attempting a password login against one of these
+ * accounts.
  */
 @Entity
 @Table(name = "users")
@@ -27,8 +35,11 @@ public class User extends BaseEntity {
     @Column(name = "email", nullable = false, unique = true)
     private String email;
 
-    @Column(name = "password_hash", nullable = false)
+    @Column(name = "password_hash")
     private String passwordHash;
+
+    @Column(name = "google_id", unique = true)
+    private String googleId;
 
     @Column(name = "phone")
     private String phone;
@@ -63,6 +74,14 @@ public class User extends BaseEntity {
 
     public void setPasswordHash(String passwordHash) {
         this.passwordHash = passwordHash;
+    }
+
+    public String getGoogleId() {
+        return googleId;
+    }
+
+    public void setGoogleId(String googleId) {
+        this.googleId = googleId;
     }
 
     public String getPhone() {

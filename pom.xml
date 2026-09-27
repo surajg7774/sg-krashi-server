@@ -26,6 +26,8 @@
         <aws-sdk.version>2.29.52</aws-sdk.version>
         <openpdf.version>2.0.3</openpdf.version>
         <cloudinary.version>2.0.0</cloudinary.version>
+        <firebase-admin.version>9.11.0</firebase-admin.version>
+        <google-api-client.version>2.9.1</google-api-client.version>
     </properties>
 
     <dependencies>
@@ -122,6 +124,28 @@
             <groupId>com.cloudinary</groupId>
             <artifactId>cloudinary-http5</artifactId>
             <version>${cloudinary.version}</version>
+        </dependency>
+
+        <!-- FcmNotificationSender's push channel — the real Firebase Admin
+             SDK, used only to send already-composed messages to already-known
+             device tokens (see FcmNotificationSender's Javadoc). Inert until
+             FCM_ENABLED=true and FIREBASE_SERVICE_ACCOUNT_JSON are both set;
+             just being on the classpath costs nothing at boot. -->
+        <dependency>
+            <groupId>com.google.firebase</groupId>
+            <artifactId>firebase-admin</artifactId>
+            <version>${firebase-admin.version}</version>
+        </dependency>
+
+        <!-- GoogleAuthServiceImpl's ID-token verification (GoogleIdTokenVerifier)
+             for "Sign in with Google" — a separate Google SDK family from
+             firebase-admin above (this one is generic OAuth2/OIDC token
+             verification, not Firebase-specific), but the same
+             well-established Google Java client library approach. -->
+        <dependency>
+            <groupId>com.google.api-client</groupId>
+            <artifactId>google-api-client</artifactId>
+            <version>${google-api-client.version}</version>
         </dependency>
 
         <!-- AI Crop Doctor (Task: com.sgkrashi.cropdoctor) — WebClient is the HTTP

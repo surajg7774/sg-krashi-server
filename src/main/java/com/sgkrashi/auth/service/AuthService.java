@@ -33,6 +33,16 @@ public interface AuthService {
     AuthResult login(LoginRequest request);
 
     /**
+     * Verifies the given Google ID token and logs the resolved user in —
+     * see {@link GoogleAuthService#findOrCreateUser} for the existing/
+     * auto-linked/new-account resolution.
+     *
+     * @throws com.sgkrashi.auth.exception.GoogleSignInNotConfiguredException if Google Sign-In isn't configured yet
+     * @throws com.sgkrashi.auth.exception.InvalidGoogleTokenException if the token fails verification
+     */
+    AuthResult loginWithGoogle(String idToken);
+
+    /**
      * Validates the given raw refresh token, revokes it, and issues a fresh
      * access token plus a rotated refresh token.
      *
