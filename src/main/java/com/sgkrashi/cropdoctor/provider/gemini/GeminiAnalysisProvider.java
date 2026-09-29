@@ -27,6 +27,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.util.retry.Retry;
 
 import javax.imageio.IIOImage;
 import javax.imageio.ImageIO;
@@ -61,6 +62,15 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
     private static final Logger log = LoggerFactory.getLogger(GeminiAnalysisProvider.class);
     private static final Duration TIMEOUT = Duration.ofSeconds(45);
     private static final String PROVIDER_NAME = "gemini";
+    // Confirmed live (2026-09-27 and 2026-09-29, both real production
+    // requests): Gemini returns 503 UNAVAILABLE with "This model is
+    // currently experiencing high demand... try again later" - Google's own
+    // wording says a retry is the correct response, not a permanent
+    // failure. Deliberately NOT applied to 429 (quota exhaustion, handled
+    // separately above) - that resets daily, not within seconds, so
+    // retrying it immediately would just waste the same exhausted quota.
+    private static final int MAX_OVERLOAD_RETRIES = 2;
+    private static final Duration OVERLOAD_RETRY_BACKOFF = Duration.ofSeconds(2);
     // Keeps the grounding section a small, focused addition to the prompt
     // rather than dumping the whole matching slice of the knowledge base in —
     // RetrievalServiceImpl already orders crop-specific matches first, so
@@ -138,6 +148,12 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
                     .retrieve()
                     .bodyToMono(String.class)
                     .timeout(TIMEOUT)
+                    .retryWhen(Retry.backoff(MAX_OVERLOAD_RETRIES, OVERLOAD_RETRY_BACKOFF)
+                            .filter(GeminiAnalysisProvider::isOverloadError)
+                            .doBeforeRetry(signal -> log.warn(
+                                    "Gemini overloaded (503), retrying (attempt {} of {})",
+                                    signal.totalRetries() + 1, MAX_OVERLOAD_RETRIES))
+                            .onRetryExhaustedThrow((spec, signal) -> signal.failure()))
                     .block();
         } catch (WebClientResponseException ex) {
             if (ex.getStatusCode() == HttpStatusCode.valueOf(429)) {
@@ -157,6 +173,11 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
         }
 
         return parseAndValidate(responseBody, declaredCrop, groundingEntries);
+    }
+
+    private static boolean isOverloadError(Throwable ex) {
+        return ex instanceof WebClientResponseException wex
+                && wex.getStatusCode() == HttpStatusCode.valueOf(503);
     }
 
     private ObjectNode buildPayload(List<MultipartFile> images, String declaredCrop, String language, List<KnowledgeBaseEntry> groundingEntries, Optional<WeatherSnapshot> weather) {
