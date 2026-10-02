@@ -3,32 +3,41 @@ package com.sgkrashi.auth.service;
 import com.sgkrashi.auth.dto.request.ForgotPasswordRequest;
 import com.sgkrashi.auth.dto.request.LoginRequest;
 import com.sgkrashi.auth.dto.request.RegisterRequest;
+import com.sgkrashi.auth.dto.request.ResendOtpRequest;
 import com.sgkrashi.auth.dto.request.ResetPasswordRequest;
-import com.sgkrashi.auth.dto.request.VerifyEmailRequest;
+import com.sgkrashi.auth.dto.request.VerifyOtpRequest;
 
 public interface AuthService {
 
     /**
      * Does NOT create a {@code User} row — only validates the request (email
-     * not already taken) and emails a verification link. The account is
-     * created by {@link #verifyEmail}, only once that link is actually
-     * clicked, which is what guarantees every account belongs to an email
-     * the registrant genuinely controls rather than just a string shaped
-     * like one.
+     * not already taken) and emails a 6-digit OTP. The account is created by
+     * {@link #verifyOtp}, only once that code is submitted correctly, which
+     * is what guarantees every account belongs to an email the registrant
+     * genuinely controls rather than just a string shaped like one.
      *
      * @throws com.sgkrashi.common.exception.DuplicateResourceException if the email is already registered
      */
     void register(RegisterRequest request);
 
     /**
-     * Creates the account embedded in a valid, unexpired verification token
-     * and logs it in — the only place a {@code User} row actually gets
-     * created from a self-service registration.
+     * Creates the account for a pending registration whose OTP matches and
+     * hasn't expired, and logs it in — the only place a {@code User} row
+     * actually gets created from a self-service registration.
      *
-     * @throws com.sgkrashi.common.exception.InvalidTokenException if the token is missing, expired, or invalid
-     * @throws com.sgkrashi.common.exception.DuplicateResourceException if this email was already verified (e.g. the link was clicked twice)
+     * @throws com.sgkrashi.auth.exception.InvalidOtpException if the code is wrong, expired, or no pending registration exists for this email
+     * @throws com.sgkrashi.auth.exception.TooManyOtpAttemptsException if too many wrong codes have been submitted
+     * @throws com.sgkrashi.common.exception.DuplicateResourceException if this email was already verified by a concurrent request
      */
-    AuthResult verifyEmail(VerifyEmailRequest request);
+    AuthResult verifyOtp(VerifyOtpRequest request);
+
+    /**
+     * Regenerates and re-emails the OTP for a still-pending registration.
+     *
+     * @throws com.sgkrashi.auth.exception.InvalidOtpException if no pending registration exists for this email
+     * @throws com.sgkrashi.auth.exception.OtpResendCooldownException if requested again before the cooldown window elapses
+     */
+    void resendOtp(ResendOtpRequest request);
 
     AuthResult login(LoginRequest request);
 

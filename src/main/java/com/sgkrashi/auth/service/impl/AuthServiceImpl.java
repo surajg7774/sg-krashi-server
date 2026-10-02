@@ -3,13 +3,19 @@ package com.sgkrashi.auth.service.impl;
 import com.sgkrashi.auth.dto.request.ForgotPasswordRequest;
 import com.sgkrashi.auth.dto.request.LoginRequest;
 import com.sgkrashi.auth.dto.request.RegisterRequest;
+import com.sgkrashi.auth.dto.request.ResendOtpRequest;
 import com.sgkrashi.auth.dto.request.ResetPasswordRequest;
-import com.sgkrashi.auth.dto.request.VerifyEmailRequest;
+import com.sgkrashi.auth.dto.request.VerifyOtpRequest;
 import com.sgkrashi.auth.dto.response.AuthResponse;
+import com.sgkrashi.auth.entity.PendingRegistration;
 import com.sgkrashi.auth.entity.RefreshToken;
 import com.sgkrashi.auth.entity.Role;
 import com.sgkrashi.auth.entity.User;
+import com.sgkrashi.auth.exception.InvalidOtpException;
+import com.sgkrashi.auth.exception.OtpResendCooldownException;
+import com.sgkrashi.auth.exception.TooManyOtpAttemptsException;
 import com.sgkrashi.auth.mapper.UserMapper;
+import com.sgkrashi.auth.repository.PendingRegistrationRepository;
 import com.sgkrashi.auth.repository.RefreshTokenRepository;
 import com.sgkrashi.auth.repository.RoleRepository;
 import com.sgkrashi.auth.repository.UserRepository;
@@ -34,6 +40,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
@@ -47,10 +54,14 @@ public class AuthServiceImpl implements AuthService {
     private static final Logger log = LoggerFactory.getLogger(AuthServiceImpl.class);
     private static final long REFRESH_TOKEN_TTL_DAYS = 7;
     private static final String CUSTOMER_ROLE = "CUSTOMER";
+    private static final long OTP_TTL_MINUTES = 10;
+    private static final int MAX_OTP_ATTEMPTS = 5;
+    private static final long OTP_RESEND_COOLDOWN_SECONDS = 60;
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final PendingRegistrationRepository pendingRegistrationRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final JwtTokenProvider jwtTokenProvider;
@@ -64,6 +75,7 @@ public class AuthServiceImpl implements AuthService {
             UserRepository userRepository,
             RoleRepository roleRepository,
             RefreshTokenRepository refreshTokenRepository,
+            PendingRegistrationRepository pendingRegistrationRepository,
             PasswordEncoder passwordEncoder,
             AuthenticationManager authenticationManager,
             JwtTokenProvider jwtTokenProvider,
@@ -75,6 +87,7 @@ public class AuthServiceImpl implements AuthService {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.refreshTokenRepository = refreshTokenRepository;
+        this.pendingRegistrationRepository = pendingRegistrationRepository;
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
         this.jwtTokenProvider = jwtTokenProvider;
@@ -86,18 +99,18 @@ public class AuthServiceImpl implements AuthService {
 
     /**
      * Deliberately does not create a {@code User} row here. Rejects an
-     * already-registered email up front (a clear 409, same as before) so a
-     * verification email is never sent for an address that can't actually
-     * register — but beyond that check, nothing is persisted: the pending
-     * account (name, email, already-hashed password, phone) travels entirely
-     * inside the signed verification token emailed below. See {@link
-     * #verifyEmail} for where the account is actually created — only once
-     * that link is clicked, which is what guarantees every account belongs
-     * to an email its owner actually controls, not just a validly-shaped
-     * string. The password is hashed here (not in verifyEmail) so the
-     * plaintext never has to travel through or be embedded in anything —
-     * the token only ever carries the one-way hash, exactly what would be
-     * stored in the database anyway.
+     * already-registered email up front (a clear 409, same as before) so an
+     * OTP is never sent for an address that can't actually register —
+     * beyond that check, the pending account (name, email, already-hashed
+     * password, phone) is upserted into {@code pending_registrations}
+     * keyed by email, so a repeat registration attempt for the same
+     * still-pending address just gets a fresh OTP rather than a duplicate
+     * row. See {@link #verifyOtp} for where the account is actually
+     * created — only once the emailed code is submitted correctly, which is
+     * what guarantees every account belongs to an email its owner actually
+     * controls, not just a validly-shaped string. The password is hashed
+     * here (not in verifyOtp) so the plaintext never has to be persisted
+     * anywhere, even transiently.
      */
     @Override
     @Transactional
@@ -107,60 +120,52 @@ public class AuthServiceImpl implements AuthService {
         }
 
         String passwordHash = passwordEncoder.encode(request.password());
-        String verificationToken = jwtTokenProvider.generateEmailVerificationToken(
-                request.name(), request.email(), passwordHash, request.phone());
-        String verificationLink = frontendUrl + "/verify-email?token=" + verificationToken;
-        log.info("Registration pending verification for {}. Verification link: {}", request.email(), verificationLink);
+        PendingRegistration pending = pendingRegistrationRepository.findByEmail(request.email())
+                .orElseGet(PendingRegistration::new);
+        pending.setEmail(request.email());
+        pending.setName(request.name());
+        pending.setPasswordHash(passwordHash);
+        pending.setPhone(request.phone());
+        pending.setAttemptCount(0);
 
-        // Transient User, never saved — exists only so NotificationSender's
-        // signature (which reads user.getEmail()/getName()) can be satisfied
-        // before any real account exists to attach the notification to.
-        User pendingUser = new User();
-        pendingUser.setName(request.name());
-        pendingUser.setEmail(request.email());
+        String otp = issueOtp(pending);
+        pendingRegistrationRepository.save(pending);
 
-        Notification transientNotification = new Notification();
-        transientNotification.setTitle("Verify Your SG Krashi Account");
-        transientNotification.setMessage(
-                "Welcome to SG Krashi! Please verify your email address to activate your account:\n\n"
-                        + verificationLink
-                        + "\n\nThis link expires in 24 hours. If you didn't create this account, "
-                        + "you can safely ignore this email.");
-
-        for (NotificationSender sender : notificationSenders) {
-            try {
-                sender.send(transientNotification, pendingUser);
-            } catch (Exception ex) {
-                log.warn("Verification email failed to send via {} for {}: {}",
-                        sender.getClass().getSimpleName(), request.email(), ex.getMessage());
-            }
-        }
+        log.info("Registration pending OTP verification for {}", request.email());
+        sendOtpEmail(request.name(), request.email(), otp);
     }
 
     /**
      * The only place a self-service {@code User} row actually gets created.
      * Re-checks {@code existsByEmail} even though {@link #register} already
-     * did — a stale/duplicate verification link (the same email registered
-     * twice, or the link clicked more than once) must not create a second
+     * did — a concurrent duplicate registration must not create a second
      * account or silently log into an existing one under someone else's
      * current password, so it's rejected outright rather than treated as
      * "already verified, log them in."
      */
     @Override
     @Transactional
-    public AuthResult verifyEmail(VerifyEmailRequest request) {
-        JwtTokenProvider.PendingRegistration pending;
-        try {
-            pending = jwtTokenProvider.getPendingRegistration(request.token());
-        } catch (Exception ex) {
-            // See resetPassword's identical catch for why this is Exception,
-            // not just JwtException/IllegalArgumentException — found live: a
-            // malformed, non-JWT-shaped token surfaced as a raw 500 with the
-            // narrower catch.
-            throw new InvalidTokenException("Invalid or expired verification link");
+    public AuthResult verifyOtp(VerifyOtpRequest request) {
+        PendingRegistration pending = pendingRegistrationRepository.findByEmail(request.email())
+                .orElseThrow(() -> new InvalidOtpException("Incorrect or expired code. Please register again."));
+
+        if (pending.getOtpExpiresAt().isBefore(Instant.now())) {
+            pendingRegistrationRepository.delete(pending);
+            throw new InvalidOtpException("This code has expired. Please register again.");
         }
 
-        if (userRepository.existsByEmail(pending.email())) {
+        if (pending.getAttemptCount() >= MAX_OTP_ATTEMPTS) {
+            throw new TooManyOtpAttemptsException("Too many incorrect attempts. Please request a new code.");
+        }
+
+        if (!passwordEncoder.matches(request.otp(), pending.getOtpHash())) {
+            pending.setAttemptCount(pending.getAttemptCount() + 1);
+            pendingRegistrationRepository.save(pending);
+            throw new InvalidOtpException("Incorrect code. Please try again.");
+        }
+
+        if (userRepository.existsByEmail(pending.getEmail())) {
+            pendingRegistrationRepository.delete(pending);
             throw new DuplicateResourceException("This email is already registered — please log in instead");
         }
 
@@ -169,14 +174,77 @@ public class AuthServiceImpl implements AuthService {
                         "Required role '" + CUSTOMER_ROLE + "' is missing — check V2__auth_tables.sql seeding"));
 
         User user = new User();
-        user.setName(pending.name());
-        user.setEmail(pending.email());
-        user.setPasswordHash(pending.passwordHash());
-        user.setPhone(pending.phone());
+        user.setName(pending.getName());
+        user.setEmail(pending.getEmail());
+        user.setPasswordHash(pending.getPasswordHash());
+        user.setPhone(pending.getPhone());
         user.setRoles(Set.of(customerRole));
         user = userRepository.save(user);
 
+        pendingRegistrationRepository.delete(pending);
+
         return issueTokens(user);
+    }
+
+    /**
+     * Regenerates the OTP for a still-pending registration and re-sends it.
+     * Rate-limited by {@link #OTP_RESEND_COOLDOWN_SECONDS} against {@code
+     * lastSentAt} — otherwise a user could spam this endpoint into sending
+     * unlimited emails to the same address.
+     */
+    @Override
+    @Transactional
+    public void resendOtp(ResendOtpRequest request) {
+        PendingRegistration pending = pendingRegistrationRepository.findByEmail(request.email())
+                .orElseThrow(() -> new InvalidOtpException(
+                        "No pending registration found for this email. Please register again."));
+
+        long secondsSinceLastSend = Duration.between(pending.getLastSentAt(), Instant.now()).getSeconds();
+        if (secondsSinceLastSend < OTP_RESEND_COOLDOWN_SECONDS) {
+            long waitSeconds = OTP_RESEND_COOLDOWN_SECONDS - secondsSinceLastSend;
+            throw new OtpResendCooldownException(
+                    "Please wait " + waitSeconds + " seconds before requesting another code.");
+        }
+
+        pending.setAttemptCount(0);
+        String otp = issueOtp(pending);
+        pendingRegistrationRepository.save(pending);
+
+        sendOtpEmail(pending.getName(), pending.getEmail(), otp);
+    }
+
+    /** Generates a fresh 6-digit OTP, hashes it onto {@code pending}, and resets its expiry/send-time — does not save. */
+    private String issueOtp(PendingRegistration pending) {
+        String otp = String.format("%06d", secureRandom.nextInt(1_000_000));
+        pending.setOtpHash(passwordEncoder.encode(otp));
+        pending.setOtpExpiresAt(Instant.now().plus(OTP_TTL_MINUTES, ChronoUnit.MINUTES));
+        pending.setLastSentAt(Instant.now());
+        return otp;
+    }
+
+    private void sendOtpEmail(String name, String email, String otp) {
+        // Transient User, never saved — exists only so NotificationSender's
+        // signature (which reads user.getEmail()/getName()) can be satisfied
+        // before any real account exists to attach the notification to.
+        User pendingUser = new User();
+        pendingUser.setName(name);
+        pendingUser.setEmail(email);
+
+        Notification transientNotification = new Notification();
+        transientNotification.setTitle("Your SG Krashi verification code");
+        transientNotification.setMessage(
+                "Welcome to SG Krashi! Your verification code is: " + otp
+                        + "\n\nEnter this code in the app to activate your account. It expires in "
+                        + OTP_TTL_MINUTES + " minutes.\n\nIf you didn't request this, you can safely ignore this email.");
+
+        for (NotificationSender sender : notificationSenders) {
+            try {
+                sender.send(transientNotification, pendingUser);
+            } catch (Exception ex) {
+                log.warn("OTP email failed to send via {} for {}: {}",
+                        sender.getClass().getSimpleName(), email, ex.getMessage());
+            }
+        }
     }
 
     /**

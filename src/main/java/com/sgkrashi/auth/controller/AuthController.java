@@ -1,10 +1,12 @@
 package com.sgkrashi.auth.controller;
 
 import com.sgkrashi.auth.dto.request.ForgotPasswordRequest;
+import com.sgkrashi.auth.dto.request.GoogleAuthRequest;
 import com.sgkrashi.auth.dto.request.LoginRequest;
 import com.sgkrashi.auth.dto.request.RegisterRequest;
+import com.sgkrashi.auth.dto.request.ResendOtpRequest;
 import com.sgkrashi.auth.dto.request.ResetPasswordRequest;
-import com.sgkrashi.auth.dto.request.VerifyEmailRequest;
+import com.sgkrashi.auth.dto.request.VerifyOtpRequest;
 import com.sgkrashi.auth.dto.response.AuthResponse;
 import com.sgkrashi.auth.ratelimit.LoginRateLimiter;
 import com.sgkrashi.auth.service.AuthResult;
@@ -54,18 +56,34 @@ public class AuthController {
         enforceRateLimit(servletRequest);
         authService.register(request);
         return ResponseEntity.ok(ApiResponse.success(
-                null, "Please check your email to verify your account and finish creating it"));
+                null, "A verification code has been sent to your email"));
     }
 
-    @PostMapping("/verify-email")
-    public ResponseEntity<ApiResponse<AuthResponse>> verifyEmail(
-            @Valid @RequestBody VerifyEmailRequest request,
+    @PostMapping("/verify-otp")
+    public ResponseEntity<ApiResponse<AuthResponse>> verifyOtp(
+            @Valid @RequestBody VerifyOtpRequest request,
             HttpServletResponse servletResponse
     ) {
-        AuthResult result = authService.verifyEmail(request);
+        AuthResult result = authService.verifyOtp(request);
         setRefreshCookie(servletResponse, result.rawRefreshToken());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(result.response(), "Account verified and created successfully"));
+    }
+
+    @PostMapping("/resend-otp")
+    public ResponseEntity<ApiResponse<Void>> resendOtp(@Valid @RequestBody ResendOtpRequest request) {
+        authService.resendOtp(request);
+        return ResponseEntity.ok(ApiResponse.success(null, "A new verification code has been sent"));
+    }
+
+    @PostMapping("/google")
+    public ResponseEntity<ApiResponse<AuthResponse>> google(
+            @Valid @RequestBody GoogleAuthRequest request,
+            HttpServletResponse servletResponse
+    ) {
+        AuthResult result = authService.loginWithGoogle(request.idToken());
+        setRefreshCookie(servletResponse, result.rawRefreshToken());
+        return ResponseEntity.ok(ApiResponse.success(result.response(), "Login successful"));
     }
 
     @PostMapping("/login")

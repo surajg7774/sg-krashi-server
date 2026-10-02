@@ -3,6 +3,7 @@ package com.sgkrashi.auth.controller;
 import com.sgkrashi.auth.dto.request.GoogleAuthRequest;
 import com.sgkrashi.auth.dto.request.LoginRequest;
 import com.sgkrashi.auth.dto.request.RefreshTokenRequest;
+import com.sgkrashi.auth.dto.request.VerifyOtpRequest;
 import com.sgkrashi.auth.dto.response.MobileAuthResponse;
 import com.sgkrashi.auth.dto.response.MobileRefreshResponse;
 import com.sgkrashi.auth.ratelimit.LoginRateLimiter;
@@ -71,6 +72,17 @@ public class MobileAuthController {
         MobileAuthResponse body = new MobileAuthResponse(
                 result.response().accessToken(), result.rawRefreshToken(), result.response().user());
         return ResponseEntity.ok(ApiResponse.success(body, "Login successful"));
+    }
+
+    // No rate limiting — same reasoning as google() above: nothing to guess,
+    // and TooManyOtpAttemptsException already bounds wrong-code attempts on
+    // the OTP itself, which is the actual brute-force surface here.
+    @PostMapping("/verify-otp")
+    public ResponseEntity<ApiResponse<MobileAuthResponse>> verifyOtp(@Valid @RequestBody VerifyOtpRequest request) {
+        AuthResult result = authService.verifyOtp(request);
+        MobileAuthResponse body = new MobileAuthResponse(
+                result.response().accessToken(), result.rawRefreshToken(), result.response().user());
+        return ResponseEntity.ok(ApiResponse.success(body, "Account verified and created successfully"));
     }
 
     // No rate limiting here, matching AuthController.refresh(), which has

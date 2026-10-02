@@ -4,6 +4,9 @@ import com.sgkrashi.common.dto.ApiErrorResponse;
 import com.sgkrashi.auth.exception.GoogleOnlyAccountException;
 import com.sgkrashi.auth.exception.GoogleSignInNotConfiguredException;
 import com.sgkrashi.auth.exception.InvalidGoogleTokenException;
+import com.sgkrashi.auth.exception.InvalidOtpException;
+import com.sgkrashi.auth.exception.OtpResendCooldownException;
+import com.sgkrashi.auth.exception.TooManyOtpAttemptsException;
 import com.sgkrashi.chatassistant.exception.ChatAssistantDisabledException;
 import com.sgkrashi.chatassistant.exception.ChatAssistantUnavailableException;
 import com.sgkrashi.chatassistant.exception.ChatQuotaExceededException;
@@ -197,6 +200,27 @@ public class GlobalExceptionHandler {
         log.warn("Google sign-in attempted before configuration: {}", ex.getMessage());
         ApiErrorResponse body = ApiErrorResponse.of("GOOGLE_SIGN_IN_NOT_CONFIGURED", ex.getMessage(), List.of());
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+    }
+
+    @ExceptionHandler(InvalidOtpException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidOtp(InvalidOtpException ex) {
+        log.warn("OTP verification failed: {}", ex.getMessage());
+        ApiErrorResponse body = ApiErrorResponse.of("INVALID_OTP", ex.getMessage(), List.of());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    @ExceptionHandler(TooManyOtpAttemptsException.class)
+    public ResponseEntity<ApiErrorResponse> handleTooManyOtpAttempts(TooManyOtpAttemptsException ex) {
+        log.warn("Too many OTP attempts: {}", ex.getMessage());
+        ApiErrorResponse body = ApiErrorResponse.of("TOO_MANY_OTP_ATTEMPTS", ex.getMessage(), List.of());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    @ExceptionHandler(OtpResendCooldownException.class)
+    public ResponseEntity<ApiErrorResponse> handleOtpResendCooldown(OtpResendCooldownException ex) {
+        log.warn("OTP resend requested too soon: {}", ex.getMessage());
+        ApiErrorResponse body = ApiErrorResponse.of("OTP_RESEND_COOLDOWN", ex.getMessage(), List.of());
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(body);
     }
 
     @ExceptionHandler(AccessDeniedException.class)
