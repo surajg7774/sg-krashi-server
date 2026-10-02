@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.util.retry.Retry;
 
 import java.time.Duration;
 import java.time.format.DateTimeFormatter;
@@ -67,6 +68,14 @@ public class MandiPriceApiClient {
     // this platform's own design, not something a bigger MAX_PAGES fixes.
     private static final int PAGE_SIZE = 500;
     private static final int MAX_PAGES = 20;
+    // Confirmed real, transient failure modes against this exact API on
+    // separate days (503 SERVICE_UNAVAILABLE on 2026-09-29; a bare
+    // connection-level failure on 2026-09-27) before it became a sustained
+    // multi-day outage (ECONNREFUSED from three independent networks,
+    // starting 2026-09-30) - a short retry can't fix a multi-day outage,
+    // but would have recovered either of those earlier one-off blips.
+    private static final int MAX_TRANSIENT_RETRIES = 2;
+    private static final Duration TRANSIENT_RETRY_BACKOFF = Duration.ofSeconds(2);
 
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
@@ -128,6 +137,12 @@ public class MandiPriceApiClient {
                         .retrieve()
                         .bodyToMono(String.class)
                         .timeout(TIMEOUT)
+                        .retryWhen(Retry.backoff(MAX_TRANSIENT_RETRIES, TRANSIENT_RETRY_BACKOFF)
+                                .filter(MandiPriceApiClient::isTransientFailure)
+                                .doBeforeRetry(signal -> log.warn(
+                                        "data.gov.in mandi API call failed transiently, retrying (attempt {} of {})",
+                                        signal.totalRetries() + 1, MAX_TRANSIENT_RETRIES))
+                                .onRetryExhaustedThrow((spec, signal) -> signal.failure()))
                         .block();
             } catch (WebClientResponseException ex) {
                 log.warn("data.gov.in mandi API returned {} {}: {}", ex.getStatusCode(), ex.getStatusText(), ex.getResponseBodyAsString());
@@ -147,6 +162,11 @@ public class MandiPriceApiClient {
             }
         }
         return rows;
+    }
+
+    private static boolean isTransientFailure(Throwable ex) {
+        return ex instanceof WebClientRequestException
+                || (ex instanceof WebClientResponseException wex && wex.getStatusCode().value() == 503);
     }
 
     private List<MandiPriceRow> parseRecords(String responseBody) {
