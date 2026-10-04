@@ -21,6 +21,7 @@ import com.sgkrashi.media.entity.MediaAsset;
 import com.sgkrashi.media.repository.MediaAssetRepository;
 import com.sgkrashi.notification.event.OrderConfirmedEvent;
 import com.sgkrashi.notification.event.OrderDeliveredEvent;
+import com.sgkrashi.notification.event.OrderPlacedEvent;
 import com.sgkrashi.notification.event.PaymentFailedEvent;
 import com.sgkrashi.notification.event.RefundProcessedEvent;
 import com.sgkrashi.order.dto.request.CheckoutRequest;
@@ -249,6 +250,9 @@ public class OrderServiceImpl implements OrderService {
 
         recordStatusHistory(savedOrder, OrderStatus.PENDING_PAYMENT, "Order placed");
         cartItemRepository.deleteByCartId(cart.getId());
+
+        eventPublisher.publishEvent(new OrderPlacedEvent(
+                savedOrder.getId(), savedOrder.getUserId(), savedOrder.getOrderNumber(), savedOrder.getTotalAmount()));
 
         return buildOrderResponse(savedOrder);
     }

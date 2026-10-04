@@ -30,6 +30,18 @@ public class NotificationEventListener {
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onOrderPlaced(OrderPlacedEvent event) {
+        notificationService.notify(
+                event.userId(),
+                NotificationType.ORDER_PLACED,
+                "Order Placed",
+                "We've received your order " + event.orderNumber() + " for Rs. " + event.totalAmount()
+                        + ". Complete payment to confirm it.",
+                NotificationRelatedType.ORDER,
+                event.orderId());
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onOrderConfirmed(OrderConfirmedEvent event) {
         notificationService.notify(
                 event.userId(),
