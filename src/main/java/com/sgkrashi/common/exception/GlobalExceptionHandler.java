@@ -2,6 +2,7 @@ package com.sgkrashi.common.exception;
 
 import com.sgkrashi.common.dto.ApiErrorResponse;
 import com.sgkrashi.auth.exception.GoogleOnlyAccountException;
+import org.springframework.security.authentication.InternalAuthenticationServiceException;
 import com.sgkrashi.auth.exception.GoogleSignInNotConfiguredException;
 import com.sgkrashi.auth.exception.InvalidGoogleTokenException;
 import com.sgkrashi.auth.exception.InvalidOtpException;
@@ -281,6 +282,21 @@ public class GlobalExceptionHandler {
         log.warn("Malformed request body: {}", ex.getMessage());
         ApiErrorResponse body = ApiErrorResponse.of("VALIDATION_ERROR", "Request body is malformed or contains an invalid value", List.of());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    /**
+     * Spring Security wraps anything thrown from {@code UserDetailsService}
+     * (other than its own exception types) in this, so the Google-only
+     * account's {@code GoogleOnlyAccountException} never reached its own
+     * handler above and surfaced as a 500 on password login. Unwrap that one
+     * case to the proper 401; anything else is still a genuine server fault.
+     */
+    @ExceptionHandler(InternalAuthenticationServiceException.class)
+    public ResponseEntity<ApiErrorResponse> handleInternalAuthenticationService(InternalAuthenticationServiceException ex) {
+        if (ex.getCause() instanceof GoogleOnlyAccountException googleOnly) {
+            return handleGoogleOnlyAccount(googleOnly);
+        }
+        return handleUnexpected(ex);
     }
 
     @ExceptionHandler(Exception.class)

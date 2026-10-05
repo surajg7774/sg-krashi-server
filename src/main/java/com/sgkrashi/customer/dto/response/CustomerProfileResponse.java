@@ -7,6 +7,10 @@ public record CustomerProfileResponse(
         String name,
         String email,
         String phone,
-        List<String> roles
+        List<String> roles,
+        // Additive (older clients ignore them): which re-authentication the
+        // account-deletion dialog should ask for.
+        boolean hasPassword,
+        boolean googleLinked
 ) {
 }

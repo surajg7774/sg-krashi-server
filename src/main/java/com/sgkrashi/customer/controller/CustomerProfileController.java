@@ -2,11 +2,14 @@ package com.sgkrashi.customer.controller;
 
 import com.sgkrashi.common.dto.ApiResponse;
 import com.sgkrashi.customer.dto.request.ChangePasswordRequest;
+import com.sgkrashi.customer.dto.request.DeleteAccountRequest;
 import com.sgkrashi.customer.dto.request.UpdateProfileRequest;
 import com.sgkrashi.customer.dto.response.CustomerProfileResponse;
+import com.sgkrashi.customer.service.AccountDeletionService;
 import com.sgkrashi.customer.service.CustomerProfileService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -24,9 +27,25 @@ import org.springframework.web.bind.annotation.RestController;
 public class CustomerProfileController {
 
     private final CustomerProfileService customerProfileService;
+    private final AccountDeletionService accountDeletionService;
 
-    public CustomerProfileController(CustomerProfileService customerProfileService) {
+    public CustomerProfileController(
+            CustomerProfileService customerProfileService,
+            AccountDeletionService accountDeletionService
+    ) {
         this.customerProfileService = customerProfileService;
+        this.accountDeletionService = accountDeletionService;
+    }
+
+    /**
+     * Deletes (anonymizes) the logged-in user's own account after
+     * re-authentication — see {@code AccountDeletionService}. DELETE with a
+     * body, because the password / Google token must not travel in a URL.
+     */
+    @DeleteMapping
+    public ResponseEntity<ApiResponse<Void>> deleteAccount(@RequestBody(required = false) DeleteAccountRequest request) {
+        accountDeletionService.deleteCurrentAccount(request);
+        return ResponseEntity.ok(ApiResponse.success(null, "Your account has been deleted"));
     }
 
     @GetMapping

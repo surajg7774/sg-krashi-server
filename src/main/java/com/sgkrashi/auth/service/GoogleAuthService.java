@@ -14,4 +14,14 @@ public interface GoogleAuthService {
      * @throws com.sgkrashi.auth.exception.InvalidGoogleTokenException if the token fails verification
      */
     User findOrCreateUser(String idToken);
+
+    /**
+     * Verifies the token and returns Google's stable subject id, creating or
+     * linking nothing — used to re-confirm an already-logged-in Google account
+     * before a destructive action (account deletion).
+     *
+     * @throws com.sgkrashi.auth.exception.GoogleSignInNotConfiguredException if {@code GOOGLE_WEB_CLIENT_ID} is unset
+     * @throws com.sgkrashi.auth.exception.InvalidGoogleTokenException if the token fails verification
+     */
+    String verifyAndGetSubject(String idToken);
 }

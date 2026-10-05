@@ -17,6 +17,8 @@ public class CustomerProfileMapper {
     public CustomerProfileResponse toResponse(User user) {
         var roleNames = user.getRoles().stream().map(Role::getName).toList();
         return new CustomerProfileResponse(
-                user.getId(), user.getName(), user.getEmail(), user.getPhone(), roleNames);
+                user.getId(), user.getName(), user.getEmail(), user.getPhone(), roleNames,
+                // Only whether each sign-in method exists, never the hash or Google id itself.
+                user.getPasswordHash() != null, user.getGoogleId() != null);
     }
 }

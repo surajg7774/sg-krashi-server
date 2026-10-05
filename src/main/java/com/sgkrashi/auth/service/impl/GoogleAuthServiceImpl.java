@@ -116,6 +116,14 @@ public class GoogleAuthServiceImpl implements GoogleAuthService {
                         .orElseGet(() -> createGoogleUser(googleId, email, name)));
     }
 
+    @Override
+    public String verifyAndGetSubject(String idToken) {
+        if (!isConfigured()) {
+            throw new GoogleSignInNotConfiguredException("Google Sign-In is not configured yet on this server.");
+        }
+        return verify(idToken).getSubject();
+    }
+
     private GoogleIdToken.Payload verify(String idToken) {
         try {
             GoogleIdToken token = verifier.verify(idToken);
