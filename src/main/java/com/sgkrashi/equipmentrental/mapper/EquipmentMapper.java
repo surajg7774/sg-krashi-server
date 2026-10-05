@@ -22,7 +22,8 @@ public class EquipmentMapper {
                 thumbnailUrl,
                 equipment.getAvgRating(),
                 equipment.getReviewCount(),
-                equipment.isActive()
+                equipment.isActive(),
+                equipment.getCreatedAt()
         );
     }
 
@@ -38,7 +39,8 @@ public class EquipmentMapper {
                 media,
                 equipment.getAvgRating(),
                 equipment.getReviewCount(),
-                equipment.isActive()
+                equipment.isActive(),
+                equipment.getCreatedAt()
         );
     }
 }

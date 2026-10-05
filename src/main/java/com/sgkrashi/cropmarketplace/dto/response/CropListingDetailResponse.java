@@ -3,6 +3,7 @@ package com.sgkrashi.cropmarketplace.dto.response;
 import com.sgkrashi.media.dto.response.MediaAssetResponse;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -20,7 +21,8 @@ public record CropListingDetailResponse(
         List<CropListingSummaryResponse> relatedListings,
         BigDecimal avgRating,
         int reviewCount,
-        boolean isActive
+        boolean isActive,
+        Instant createdAt
 ) {
     public record CropCategorySummary(Long id, String name, String slug) {
     }

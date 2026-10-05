@@ -3,6 +3,7 @@ package com.sgkrashi.productstore.dto.response;
 import com.sgkrashi.media.dto.response.MediaAssetResponse;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 
 public record ProductDetailResponse(
@@ -18,7 +19,8 @@ public record ProductDetailResponse(
         List<ProductSummaryResponse> relatedProducts,
         BigDecimal avgRating,
         int reviewCount,
-        boolean isActive
+        boolean isActive,
+        Instant createdAt
 ) {
     public record ProductCategorySummary(Long id, String name, String slug) {
     }

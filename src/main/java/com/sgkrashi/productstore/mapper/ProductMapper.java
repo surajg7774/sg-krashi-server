@@ -25,7 +25,8 @@ public class ProductMapper {
                 thumbnailUrl,
                 product.getAvgRating(),
                 product.getReviewCount(),
-                product.isActive()
+                product.isActive(),
+                product.getCreatedAt()
         );
     }
 
@@ -52,7 +53,8 @@ public class ProductMapper {
                 relatedProducts,
                 product.getAvgRating(),
                 product.getReviewCount(),
-                product.isActive()
+                product.isActive(),
+                product.getCreatedAt()
         );
     }
 }

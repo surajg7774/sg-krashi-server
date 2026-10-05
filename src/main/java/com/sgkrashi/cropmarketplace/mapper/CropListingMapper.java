@@ -26,7 +26,8 @@ public class CropListingMapper {
                 thumbnailUrl,
                 listing.getAvgRating(),
                 listing.getReviewCount(),
-                listing.isActive()
+                listing.isActive(),
+                listing.getCreatedAt()
         );
     }
 
@@ -54,7 +55,8 @@ public class CropListingMapper {
                 relatedListings,
                 listing.getAvgRating(),
                 listing.getReviewCount(),
-                listing.isActive()
+                listing.isActive(),
+                listing.getCreatedAt()
         );
     }
 }

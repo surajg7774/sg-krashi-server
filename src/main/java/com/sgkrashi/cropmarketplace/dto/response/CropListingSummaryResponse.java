@@ -1,6 +1,7 @@
 package com.sgkrashi.cropmarketplace.dto.response;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 
 public record CropListingSummaryResponse(
@@ -15,6 +16,7 @@ public record CropListingSummaryResponse(
         String thumbnailUrl,
         BigDecimal avgRating,
         int reviewCount,
-        boolean isActive
+        boolean isActive,
+        Instant createdAt
 ) {
 }

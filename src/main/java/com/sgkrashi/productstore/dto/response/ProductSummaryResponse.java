@@ -1,6 +1,7 @@
 package com.sgkrashi.productstore.dto.response;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 
 public record ProductSummaryResponse(
         Long id,
@@ -13,6 +14,7 @@ public record ProductSummaryResponse(
         String thumbnailUrl,
         BigDecimal avgRating,
         int reviewCount,
-        boolean isActive
+        boolean isActive,
+        Instant createdAt
 ) {
 }

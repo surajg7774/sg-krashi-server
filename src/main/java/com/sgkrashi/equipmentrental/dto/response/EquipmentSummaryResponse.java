@@ -1,6 +1,7 @@
 package com.sgkrashi.equipmentrental.dto.response;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 
 public record EquipmentSummaryResponse(
         Long id,
@@ -12,6 +13,7 @@ public record EquipmentSummaryResponse(
         String thumbnailUrl,
         BigDecimal avgRating,
         int reviewCount,
-        boolean isActive
+        boolean isActive,
+        Instant createdAt
 ) {
 }

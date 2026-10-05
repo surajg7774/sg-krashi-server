@@ -1,6 +1,7 @@
 package com.sgkrashi.farmstay.dto.response;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 
 public record StayListingSummaryResponse(
         Long id,
@@ -14,6 +15,7 @@ public record StayListingSummaryResponse(
         String thumbnailUrl,
         BigDecimal avgRating,
         int reviewCount,
-        boolean isActive
+        boolean isActive,
+        Instant createdAt
 ) {
 }

@@ -3,6 +3,7 @@ package com.sgkrashi.equipmentrental.dto.response;
 import com.sgkrashi.media.dto.response.MediaAssetResponse;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 
 public record EquipmentDetailResponse(
@@ -16,6 +17,7 @@ public record EquipmentDetailResponse(
         List<MediaAssetResponse> media,
         BigDecimal avgRating,
         int reviewCount,
-        boolean isActive
+        boolean isActive,
+        Instant createdAt
 ) {
 }
