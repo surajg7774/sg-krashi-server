@@ -65,6 +65,9 @@ Thumbs.db
 ### Local secrets ###
 application-local.yml
 .env
+superadmin_token.txt
+*_token.txt
+*.token
 
 ### Local dev media storage (LocalStorageProvider) ###
 uploads/
