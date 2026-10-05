@@ -81,6 +81,7 @@ public class MandiPriceApiClient {
     private final ObjectMapper objectMapper;
     private final String apiKey;
     private final String resourceId;
+    private final String host;
 
     public MandiPriceApiClient(
             @Value("${app.mandi.base-url:https://api.data.gov.in}") String baseUrl,
@@ -89,6 +90,7 @@ public class MandiPriceApiClient {
             ObjectMapper objectMapper
     ) {
         this.webClient = WebClient.builder().baseUrl(baseUrl).build();
+        this.host = hostOf(baseUrl);
         this.apiKey = apiKey;
         this.resourceId = resourceId;
         this.objectMapper = objectMapper;
@@ -96,6 +98,20 @@ public class MandiPriceApiClient {
 
     public boolean isConfigured() {
         return apiKey != null && !apiKey.isBlank();
+    }
+
+    /** The upstream hostname (no scheme, path or key) — for log lines that name which source failed. */
+    public String getHost() {
+        return host;
+    }
+
+    private static String hostOf(String baseUrl) {
+        try {
+            String parsed = java.net.URI.create(baseUrl).getHost();
+            return parsed != null ? parsed : baseUrl;
+        } catch (IllegalArgumentException ex) {
+            return "unknown-host";
+        }
     }
 
     /**
