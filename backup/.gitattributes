@@ -1,0 +1,6 @@
+# These run inside a Linux container: a CRLF checkout (core.autocrlf on Windows)
+# would break the shebang and the SQL. Keep them LF.
+*.sh text eol=lf
+*.sql text eol=lf
+Dockerfile text eol=lf
+*.json text eol=lf

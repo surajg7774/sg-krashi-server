@@ -69,5 +69,11 @@ superadmin_token.txt
 *_token.txt
 *.token
 
+### Backups and keys: must never be committed ###
+*PRIVATE-KEY*
+*.age
+*.sql.gz
+backup/out/
+
 ### Local dev media storage (LocalStorageProvider) ###
 uploads/
