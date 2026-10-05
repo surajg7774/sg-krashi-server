@@ -52,6 +52,11 @@ public class FcmNotificationSender implements NotificationSender {
     }
 
     @Override
+    public boolean isPush() {
+        return true;
+    }
+
+    @Override
     public void send(Notification notification, User user) {
         List<DeviceToken> tokens = deviceTokenRepository.findByUserId(user.getId());
         for (DeviceToken deviceToken : tokens) {

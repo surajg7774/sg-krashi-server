@@ -28,7 +28,7 @@ public interface RecommendationQueryRepository extends JpaRepository<OrderItem, 
             JOIN orders o ON o.id = oi1.order_id
             WHERE oi1.product_id = :productId
               AND oi1.item_type = 'PRODUCT' AND oi2.item_type = 'PRODUCT'
-              AND o.status IN ('CONFIRMED', 'REFUNDED')
+              AND o.status IN ('CONFIRMED', 'SHIPPED', 'REFUNDED')
             GROUP BY oi2.product_id
             ORDER BY coOccurrenceCount DESC
             LIMIT :limit
@@ -41,7 +41,7 @@ public interface RecommendationQueryRepository extends JpaRepository<OrderItem, 
             FROM order_items oi
             JOIN orders o ON o.id = oi.order_id
             JOIN products p ON p.id = oi.product_id
-            WHERE o.user_id = :userId AND oi.item_type = 'PRODUCT' AND o.status IN ('CONFIRMED', 'REFUNDED')
+            WHERE o.user_id = :userId AND oi.item_type = 'PRODUCT' AND o.status IN ('CONFIRMED', 'SHIPPED', 'REFUNDED')
             """, nativeQuery = true)
     List<Long> findPurchasedProductCategoryIds(@Param("userId") Long userId);
 
@@ -51,7 +51,7 @@ public interface RecommendationQueryRepository extends JpaRepository<OrderItem, 
             FROM order_items oi
             JOIN orders o ON o.id = oi.order_id
             JOIN crop_listings c ON c.id = oi.crop_listing_id
-            WHERE o.user_id = :userId AND oi.item_type = 'CROP_LISTING' AND o.status IN ('CONFIRMED', 'REFUNDED')
+            WHERE o.user_id = :userId AND oi.item_type = 'CROP_LISTING' AND o.status IN ('CONFIRMED', 'SHIPPED', 'REFUNDED')
             """, nativeQuery = true)
     List<Long> findPurchasedCropCategoryIds(@Param("userId") Long userId);
 
@@ -60,7 +60,7 @@ public interface RecommendationQueryRepository extends JpaRepository<OrderItem, 
             SELECT DISTINCT oi.product_id
             FROM order_items oi
             JOIN orders o ON o.id = oi.order_id
-            WHERE o.user_id = :userId AND oi.item_type = 'PRODUCT' AND o.status IN ('CONFIRMED', 'REFUNDED')
+            WHERE o.user_id = :userId AND oi.item_type = 'PRODUCT' AND o.status IN ('CONFIRMED', 'SHIPPED', 'REFUNDED')
             """, nativeQuery = true)
     List<Long> findPurchasedProductIds(@Param("userId") Long userId);
 
@@ -69,7 +69,7 @@ public interface RecommendationQueryRepository extends JpaRepository<OrderItem, 
             SELECT DISTINCT oi.crop_listing_id
             FROM order_items oi
             JOIN orders o ON o.id = oi.order_id
-            WHERE o.user_id = :userId AND oi.item_type = 'CROP_LISTING' AND o.status IN ('CONFIRMED', 'REFUNDED')
+            WHERE o.user_id = :userId AND oi.item_type = 'CROP_LISTING' AND o.status IN ('CONFIRMED', 'SHIPPED', 'REFUNDED')
             """, nativeQuery = true)
     List<Long> findPurchasedCropListingIds(@Param("userId") Long userId);
 }

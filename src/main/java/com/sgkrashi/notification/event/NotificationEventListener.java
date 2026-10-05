@@ -2,6 +2,8 @@ package com.sgkrashi.notification.event;
 
 import com.sgkrashi.notification.entity.NotificationRelatedType;
 import com.sgkrashi.notification.entity.NotificationType;
+import com.sgkrashi.notification.event.OrderNotificationTemplates.Key;
+import com.sgkrashi.notification.event.OrderNotificationTemplates.Params;
 import com.sgkrashi.notification.service.NotificationService;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
@@ -17,6 +19,10 @@ import org.springframework.transaction.event.TransactionalEventListener;
  * {@code NotificationServiceImpl.notify}'s per-sender try/catch for the
  * complementary guarantee: a sender failure can't undo the notification
  * row this listener asked to be persisted, either.
+ *
+ * <p>Order notifications get their wording and push/in-app-only choice from
+ * {@link OrderNotificationTemplates}; the other business lines keep their
+ * wording here.
  */
 @Component
 public class NotificationEventListener {
@@ -29,49 +35,51 @@ public class NotificationEventListener {
         this.notificationService = notificationService;
     }
 
+    private void notifyOrder(Long userId, Long orderId, Key key, Params params) {
+        OrderNotificationTemplates.Message message =
+                OrderNotificationTemplates.render(key, params, OrderNotificationTemplates.DEFAULT_LANGUAGE);
+        notificationService.notify(
+                userId,
+                message.type(),
+                message.title(),
+                message.body(),
+                NotificationRelatedType.ORDER,
+                orderId,
+                message.push());
+    }
+
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onOrderPlaced(OrderPlacedEvent event) {
-        notificationService.notify(
-                event.userId(),
-                NotificationType.ORDER_PLACED,
-                "Order Placed",
-                "We've received your order " + event.orderNumber() + " for Rs. " + event.totalAmount()
-                        + ". Complete payment to confirm it.",
-                NotificationRelatedType.ORDER,
-                event.orderId());
+        notifyOrder(event.userId(), event.orderId(), Key.PLACED, new Params(event.orderNumber(), event.totalAmount()));
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onOrderConfirmed(OrderConfirmedEvent event) {
-        notificationService.notify(
-                event.userId(),
-                NotificationType.ORDER_CONFIRMED,
-                "Order Confirmed",
-                "Your payment was received and your order has been confirmed.",
-                NotificationRelatedType.ORDER,
-                event.orderId());
+        notifyOrder(event.userId(), event.orderId(), Key.CONFIRMED, Params.none());
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onOrderShipped(OrderShippedEvent event) {
+        notifyOrder(event.userId(), event.orderId(), Key.SHIPPED, Params.none());
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onOrderDelivered(OrderDeliveredEvent event) {
-        notificationService.notify(
-                event.userId(),
-                NotificationType.ORDER_DELIVERED,
-                "Order Delivered",
-                "Your order has been delivered. We hope you enjoy it — let us know what you think with a review!",
-                NotificationRelatedType.ORDER,
-                event.orderId());
+        notifyOrder(event.userId(), event.orderId(), Key.DELIVERED, Params.none());
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onPaymentFailed(PaymentFailedEvent event) {
-        boolean isOrder = ORDER_PAYABLE_TYPE.equals(event.payableType());
+        if (ORDER_PAYABLE_TYPE.equals(event.payableType())) {
+            notifyOrder(event.userId(), event.payableId(), Key.PAYMENT_FAILED, Params.none());
+            return;
+        }
         notificationService.notify(
                 event.userId(),
                 NotificationType.PAYMENT_FAILED,
                 "Payment Failed",
-                "Payment for your " + (isOrder ? "order" : "booking") + " could not be processed. Please try again.",
-                isOrder ? NotificationRelatedType.ORDER : NotificationRelatedType.BOOKING,
+                "Payment for your booking could not be processed. Please try again.",
+                NotificationRelatedType.BOOKING,
                 event.payableId());
     }
 
@@ -111,13 +119,16 @@ public class NotificationEventListener {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onRefundProcessed(RefundProcessedEvent event) {
-        boolean isOrder = ORDER_PAYABLE_TYPE.equals(event.payableType());
+        if (ORDER_PAYABLE_TYPE.equals(event.payableType())) {
+            notifyOrder(event.userId(), event.payableId(), Key.REFUNDED, new Params(null, event.amount()));
+            return;
+        }
         notificationService.notify(
                 event.userId(),
                 NotificationType.REFUND_PROCESSED,
                 "Refund Processed",
-                "Your refund of Rs. " + event.amount() + " for your " + (isOrder ? "order" : "booking") + " has been processed.",
-                isOrder ? NotificationRelatedType.ORDER : NotificationRelatedType.BOOKING,
+                "Your refund of Rs. " + event.amount() + " for your booking has been processed.",
+                NotificationRelatedType.BOOKING,
                 event.payableId());
     }
 

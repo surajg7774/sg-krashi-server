@@ -64,7 +64,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
 
         var ordersSummary = new DashboardSummaryResponse.OrdersSummary(
                 orderRepository.countByStatusInAndCreatedAtBetween(
-                        List.of(OrderStatus.CONFIRMED, OrderStatus.DELIVERED), startOfToday, startOfTomorrow),
+                        List.of(OrderStatus.CONFIRMED, OrderStatus.SHIPPED, OrderStatus.DELIVERED), startOfToday, startOfTomorrow),
                 orderRepository.countByStatusAndCreatedAtBetween(OrderStatus.PAYMENT_FAILED, startOfToday, startOfTomorrow),
                 orderRepository.countByStatusAndCreatedAtBetween(OrderStatus.PENDING_PAYMENT, startOfToday, startOfTomorrow));
 

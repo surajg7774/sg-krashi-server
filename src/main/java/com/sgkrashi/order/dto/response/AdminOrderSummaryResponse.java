@@ -16,5 +16,7 @@ public record AdminOrderSummaryResponse(
         int itemCount,
         boolean refunded,
         Instant refundedAt,
-        Instant createdAt
+        Instant createdAt,
+        /** True when the order needs an admin's attention (e.g. paid after being marked Payment Failed). */
+        boolean needsAttention
 ) {}

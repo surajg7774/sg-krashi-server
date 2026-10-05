@@ -34,7 +34,7 @@ public class AccountErasureRepository {
     /** Human-readable reasons deletion must wait; empty when nothing is in flight. */
     public List<String> openObligations(long userId) {
         List<String> reasons = new ArrayList<>();
-        if (count("SELECT COUNT(*) FROM orders WHERE user_id = ? AND (status = 'CONFIRMED' "
+        if (count("SELECT COUNT(*) FROM orders WHERE user_id = ? AND (status IN ('CONFIRMED', 'SHIPPED') "
                 + "OR (status = 'PENDING_PAYMENT' AND created_at > " + RECENT + "))", userId) > 0) {
             reasons.add("an order that hasn't been delivered yet");
         }

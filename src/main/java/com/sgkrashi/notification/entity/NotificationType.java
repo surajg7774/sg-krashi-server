@@ -4,6 +4,7 @@ package com.sgkrashi.notification.entity;
 public enum NotificationType {
     ORDER_PLACED,
     ORDER_CONFIRMED,
+    ORDER_SHIPPED,
     ORDER_DELIVERED,
     PAYMENT_FAILED,
     BOOKING_CONFIRMED,

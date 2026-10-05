@@ -43,7 +43,7 @@ public interface AnalyticsQueryRepository extends JpaRepository<Payment, Long> {
 
     /**
      * Top products by revenue — only orders that were genuinely paid at some
-     * point (CONFIRMED, DELIVERED, or later-REFUNDED — DELIVERED included
+     * point (CONFIRMED, SHIPPED, DELIVERED, or later-REFUNDED — DELIVERED included
      * since it's the SAME order continuing on from CONFIRMED, not a
      * different population; omitting it would silently undercount revenue
      * the moment an admin starts marking orders delivered), never
@@ -55,7 +55,7 @@ public interface AnalyticsQueryRepository extends JpaRepository<Payment, Long> {
             JOIN orders o ON o.id = oi.order_id
             JOIN products p ON p.id = oi.product_id
             WHERE oi.item_type = 'PRODUCT'
-              AND o.status IN ('CONFIRMED', 'DELIVERED', 'REFUNDED')
+              AND o.status IN ('CONFIRMED', 'SHIPPED', 'DELIVERED', 'REFUNDED')
               AND o.created_at >= :from AND o.created_at < :to
             GROUP BY p.id, p.name
             ORDER BY revenue DESC
@@ -70,7 +70,7 @@ public interface AnalyticsQueryRepository extends JpaRepository<Payment, Long> {
             JOIN orders o ON o.id = oi.order_id
             JOIN crop_listings c ON c.id = oi.crop_listing_id
             WHERE oi.item_type = 'CROP_LISTING'
-              AND o.status IN ('CONFIRMED', 'DELIVERED', 'REFUNDED')
+              AND o.status IN ('CONFIRMED', 'SHIPPED', 'DELIVERED', 'REFUNDED')
               AND o.created_at >= :from AND o.created_at < :to
             GROUP BY c.id, c.name
             ORDER BY revenue DESC
@@ -156,7 +156,7 @@ public interface AnalyticsQueryRepository extends JpaRepository<Payment, Long> {
             FROM order_items oi
             JOIN orders o ON o.id = oi.order_id
             WHERE oi.item_type = 'PRODUCT'
-              AND o.status IN ('CONFIRMED', 'DELIVERED', 'REFUNDED')
+              AND o.status IN ('CONFIRMED', 'SHIPPED', 'DELIVERED', 'REFUNDED')
               AND o.created_at >= :from AND o.created_at < :to
             GROUP BY oi.product_id
             """, nativeQuery = true)

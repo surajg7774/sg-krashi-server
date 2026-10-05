@@ -91,7 +91,7 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     public void notify(
             Long userId, NotificationType type, String title, String message,
-            NotificationRelatedType relatedType, Long relatedId
+            NotificationRelatedType relatedType, Long relatedId, boolean sendPush
     ) {
         PersistedNotification persisted = requiresNewTransactionTemplate.execute(status -> {
             Notification notification = new Notification();
@@ -121,6 +121,9 @@ public class NotificationServiceImpl implements NotificationService {
         // in-app row just persisted above, and must not stop the next sender
         // (e.g. a future SmsSender) from still running.
         for (NotificationSender sender : senders) {
+            if (!sendPush && sender.isPush()) {
+                continue;
+            }
             try {
                 sender.send(persisted.notification(), persisted.user());
             } catch (Exception ex) {

@@ -22,6 +22,7 @@ import com.sgkrashi.media.repository.MediaAssetRepository;
 import com.sgkrashi.notification.event.OrderConfirmedEvent;
 import com.sgkrashi.notification.event.OrderDeliveredEvent;
 import com.sgkrashi.notification.event.OrderPlacedEvent;
+import com.sgkrashi.notification.event.OrderShippedEvent;
 import com.sgkrashi.notification.event.PaymentFailedEvent;
 import com.sgkrashi.notification.event.RefundProcessedEvent;
 import com.sgkrashi.order.dto.request.CheckoutRequest;
@@ -33,6 +34,7 @@ import com.sgkrashi.order.entity.Order;
 import com.sgkrashi.order.entity.OrderItem;
 import com.sgkrashi.order.entity.OrderStatus;
 import com.sgkrashi.order.entity.OrderStatusHistory;
+import com.sgkrashi.order.entity.StatusChangeActor;
 import com.sgkrashi.order.mapper.OrderMapper;
 import com.sgkrashi.order.repository.OrderItemRepository;
 import com.sgkrashi.order.repository.OrderRepository;
@@ -44,6 +46,8 @@ import com.sgkrashi.payment.entity.PaymentStatus;
 import com.sgkrashi.payment.repository.PaymentRepository;
 import com.sgkrashi.productstore.entity.Product;
 import com.sgkrashi.productstore.repository.ProductRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -63,6 +67,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class OrderServiceImpl implements OrderService {
+
+    private static final Logger log = LoggerFactory.getLogger(OrderServiceImpl.class);
 
     private static final String PRODUCT_OWNER_TYPE = "PRODUCT";
     private static final String CROP_LISTING_OWNER_TYPE = "CROP_LISTING";
@@ -248,7 +254,7 @@ public class OrderServiceImpl implements OrderService {
         orderItems.forEach(item -> item.setOrder(savedOrder));
         orderItemRepository.saveAll(orderItems);
 
-        recordStatusHistory(savedOrder, OrderStatus.PENDING_PAYMENT, "Order placed");
+        recordStatusHistory(savedOrder, OrderStatus.PENDING_PAYMENT, "Order placed", StatusChangeActor.customer(userId));
         cartItemRepository.deleteByCartId(cart.getId());
 
         eventPublisher.publishEvent(new OrderPlacedEvent(
@@ -272,17 +278,31 @@ public class OrderServiceImpl implements OrderService {
         return buildOrderResponse(getOwnedOrderOrThrow(orderId));
     }
 
+    /**
+     * Payment settled. From the payment webhook (no authenticated user, so the
+     * actor is SYSTEM) or an admin reconciling a missed webhook.
+     *
+     * <p>Already CONFIRMED/SHIPPED/DELIVERED is a silent no-op (a duplicate or
+     * late webhook for an order that has already moved on). An order that is
+     * PAYMENT_FAILED or REFUNDED is deliberately left unchanged: a capture
+     * arriving after an admin marked the order failed must not silently
+     * resurrect it (its stock was already released). That case is logged at
+     * WARN and surfaced to admins as {@code attentionMessage} on the order.
+     */
     @Override
     @Transactional
     public void markConfirmed(Long orderId) {
-        Order order = getOrderEntityOrThrow(orderId);
-        if (order.getStatus() == OrderStatus.CONFIRMED) {
-            return;
+        Order order = getOrderForUpdateOrThrow(orderId);
+        switch (order.getStatus()) {
+            case PENDING_PAYMENT -> applyTransition(order, OrderStatus.CONFIRMED, currentActor(), "Payment confirmed");
+            case PAYMENT_FAILED, REFUNDED -> log.warn(
+                    "Payment confirmation for order {} ignored: the order is already {}. "
+                            + "The order was left unchanged and needs admin attention (refund the payment).",
+                    orderId, order.getStatus());
+            default -> {
+                // CONFIRMED / SHIPPED / DELIVERED: already past this step.
+            }
         }
-        order.setStatus(OrderStatus.CONFIRMED);
-        orderRepository.save(order);
-        recordStatusHistory(order, OrderStatus.CONFIRMED, "Payment confirmed");
-        eventPublisher.publishEvent(new OrderConfirmedEvent(order.getId(), order.getUserId()));
     }
 
     /**
@@ -290,12 +310,19 @@ public class OrderServiceImpl implements OrderService {
      * checkout decrements stock/quantity at order-creation time, before payment
      * settles, so a failed payment must give it back or it leaks permanently.
      * Distinct from cancellation/refunds, which remain out of scope.
+     *
+     * <p>A failure event for an order that is no longer PENDING_PAYMENT (it was
+     * confirmed meanwhile) is ignored and logged.
      */
     @Override
     @Transactional
     public void markPaymentFailed(Long orderId) {
-        Order order = getOrderEntityOrThrow(orderId);
+        Order order = getOrderForUpdateOrThrow(orderId);
+        if (order.getStatus() == OrderStatus.PAYMENT_FAILED) {
+            return;
+        }
         if (order.getStatus() != OrderStatus.PENDING_PAYMENT) {
+            log.warn("Payment failure for order {} ignored: the order is already {}.", orderId, order.getStatus());
             return;
         }
 
@@ -318,50 +345,58 @@ public class OrderServiceImpl implements OrderService {
                     }
                 });
 
-        order.setStatus(OrderStatus.PAYMENT_FAILED);
-        orderRepository.save(order);
-        recordStatusHistory(order, OrderStatus.PAYMENT_FAILED, "Payment failed — stock restored");
-        eventPublisher.publishEvent(new PaymentFailedEvent("ORDER", order.getId(), order.getUserId()));
+        applyTransition(order, OrderStatus.PAYMENT_FAILED, currentActor(), "Payment failed — stock restored");
+    }
+
+    /**
+     * Admin-marked only — no shipping/carrier integration exists. Optional step:
+     * an order may go straight from CONFIRMED to DELIVERED.
+     */
+    @Override
+    @Transactional
+    public void markShipped(Long orderId) {
+        Order order = getOrderForUpdateOrThrow(orderId);
+        applyTransition(order, OrderStatus.SHIPPED, currentActor(), "Marked shipped by admin");
     }
 
     /**
      * Admin-marked only — no shipping/carrier integration exists to trigger
-     * this any other way. Only reachable from CONFIRMED: an order that never
-     * had a settled payment, or one already refunded, cannot be "delivered".
+     * this any other way. Reachable from CONFIRMED or SHIPPED: an order that
+     * never had a settled payment, or one already refunded, cannot be
+     * "delivered".
      */
     @Override
     @Transactional
     public void markDelivered(Long orderId) {
-        Order order = getOrderEntityOrThrow(orderId);
-        if (order.getStatus() == OrderStatus.DELIVERED) {
-            return;
-        }
-        if (order.getStatus() != OrderStatus.CONFIRMED) {
-            throw new BusinessRuleException("Only a confirmed order can be marked as delivered");
-        }
-        order.setStatus(OrderStatus.DELIVERED);
-        orderRepository.save(order);
-        recordStatusHistory(order, OrderStatus.DELIVERED, "Marked delivered by admin");
-        eventPublisher.publishEvent(new OrderDeliveredEvent(order.getId(), order.getUserId()));
+        Order order = getOrderForUpdateOrThrow(orderId);
+        applyTransition(order, OrderStatus.DELIVERED, currentActor(), "Marked delivered by admin");
     }
 
     /**
      * Called only from {@code RefundServiceImpl}, itself already guarded
      * against calling this twice for the same refund — see that class's
-     * idempotency writeup. The {@code REFUNDED} check here is a defensive
-     * second layer, not the primary guarantee.
+     * idempotency writeup. The unchanged-status check inside {@code
+     * applyTransition} is a defensive second layer, not the primary guarantee.
      */
     @Override
     @Transactional
     public void markRefunded(Long orderId) {
-        Order order = getOrderEntityOrThrow(orderId);
-        if (order.getStatus() == OrderStatus.REFUNDED) {
-            return;
+        Order order = getOrderForUpdateOrThrow(orderId);
+        applyTransition(order, OrderStatus.REFUNDED, currentActor(), "Refund processed");
+    }
+
+    /**
+     * Called by {@code RefundService} BEFORE it talks to the payment gateway:
+     * if the order could not move to REFUNDED, the real refund must not happen
+     * at all (it could not be rolled back, and the order would be left
+     * disagreeing with the payment).
+     */
+    @Override
+    public void assertCanBeRefunded(Long orderId) {
+        OrderStatus status = getOrderEntityOrThrow(orderId).getStatus();
+        if (status != OrderStatus.REFUNDED && !status.canTransitionTo(OrderStatus.REFUNDED)) {
+            throw new BusinessRuleException("An order that is " + status.label() + " cannot be refunded");
         }
-        order.setStatus(OrderStatus.REFUNDED);
-        orderRepository.save(order);
-        recordStatusHistory(order, OrderStatus.REFUNDED, "Refund processed");
-        eventPublisher.publishEvent(new RefundProcessedEvent(PAYABLE_TYPE_ORDER, order.getId(), order.getUserId(), order.getTotalAmount()));
     }
 
     @Override
@@ -402,7 +437,8 @@ public class OrderServiceImpl implements OrderService {
                             order, itemCount,
                             user != null ? user.getName() : "Unknown",
                             user != null ? user.getEmail() : null,
-                            refunded, payment != null ? payment.getRefundedAt() : null);
+                            refunded, payment != null ? payment.getRefundedAt() : null,
+                            attentionMessage(order, payment) != null);
                 })
                 .toList();
         return PaginatedResponse.of(items, ordersPage);
@@ -420,56 +456,87 @@ public class OrderServiceImpl implements OrderService {
         Map<Long, String> productThumbnails = thumbnailMap(PRODUCT_OWNER_TYPE, items, ItemType.PRODUCT);
         Map<Long, String> cropListingThumbnails = thumbnailMap(CROP_LISTING_OWNER_TYPE, items, ItemType.CROP_LISTING);
 
+        List<Long> actorIds = history.stream()
+                .filter(event -> event.getChangedByRole() == StatusChangeActor.Role.ADMIN && event.getChangedByUserId() != null)
+                .map(OrderStatusHistory::getChangedByUserId)
+                .distinct()
+                .toList();
+        Map<Long, String> actorNames = userRepository.findAllById(actorIds).stream()
+                .collect(Collectors.toMap(User::getId, User::getName));
+
         return orderMapper.toAdminDetailResponse(
                 order, items, history, productThumbnails, cropListingThumbnails,
                 user != null ? user.getName() : "Unknown",
                 user != null ? user.getEmail() : null,
-                refunded, payment != null ? payment.getRefundedAt() : null);
+                refunded, payment != null ? payment.getRefundedAt() : null,
+                actorNames,
+                payment != null ? payment.getStatus().name() : null,
+                attentionMessage(order, payment));
     }
 
     /**
-     * Admin-settable targets are CONFIRMED, PAYMENT_FAILED, and DELIVERED.
-     * CONFIRMED/PAYMENT_FAILED are the two states a missed/delayed webhook
-     * might need manual reconciliation for; DELIVERED is the platform's only
-     * manual fulfillment signal (no real shipping/carrier integration exists).
-     * REFUNDED is never accepted here: it must only ever be reached via
-     * {@code RefundService}'s real gateway refund, or the Order/Payment
-     * REFUNDED-ness invariant (an Order is only REFUNDED if its Payment
-     * genuinely was) would be silently broken.
+     * A payment captured AFTER an admin marked the order Payment Failed is
+     * deliberately not allowed to confirm the order (see {@link
+     * #markConfirmed}), so the customer has paid for an order that is failed.
+     * Shown to admins on the order, and flagged in the list, until they refund
+     * it (the only way out of PAYMENT_FAILED).
+     */
+    private static String attentionMessage(Order order, Payment payment) {
+        if (payment != null && payment.getStatus() == PaymentStatus.PAID && order.getStatus() == OrderStatus.PAYMENT_FAILED) {
+            return "A payment of Rs. " + payment.getAmount() + " was received after this order was marked Payment Failed, "
+                    + "so the order was not confirmed. Refund the payment to return the customer's money.";
+        }
+        return null;
+    }
+
+    /**
+     * Admin-settable targets are CONFIRMED, PAYMENT_FAILED, SHIPPED and
+     * DELIVERED. CONFIRMED/PAYMENT_FAILED are the two states a missed/delayed
+     * webhook might need manual reconciliation for; SHIPPED and DELIVERED are
+     * the platform's manual fulfillment signals (no real shipping/carrier
+     * integration exists). REFUNDED is never accepted here: it must only ever
+     * be reached via {@code RefundService}'s real gateway refund, or the
+     * Order/Payment REFUNDED-ness invariant (an Order is only REFUNDED if its
+     * Payment genuinely was) would be silently broken.
+     *
+     * <p>A move the lifecycle does not allow (see {@link
+     * OrderStatus#canTransitionTo}) is rejected with a 422 and a plain message
+     * the admin UI shows, e.g. "This order is Delivered and cannot be changed
+     * to Confirmed". It is checked BEFORE anything is saved, so a rejected
+     * request changes nothing, notes included.
      *
      * <p>Delegates the actual transition to {@link #markConfirmed}/{@link
-     * #markPaymentFailed}/{@link #markDelivered} — the same methods the
-     * payment webhook (for the first two) uses — rather than setting {@code
-     * status} directly. This used to just flip the column, which meant an
-     * admin reconciling a missed webhook silently sent no notification
-     * (unlike the webhook path) and, for PAYMENT_FAILED specifically, never
-     * restored the stock/quantity that checkout had already decremented — a
-     * real inventory bug, not just a missing email. Reusing these methods
-     * fixes both for free and avoids a second notification mechanism for the
-     * same states.
+     * #markPaymentFailed}/{@link #markShipped}/{@link #markDelivered} — the
+     * same methods the payment webhook (for the first two) uses — which all end
+     * in {@link #applyTransition}, so there is exactly one place that changes an
+     * order's status, records who did it, and sends the notification.
      */
     @Override
     @Transactional
     public AdminOrderDetailResponse updateOrderStatus(Long orderId, OrderStatus newStatus, String adminNotes) {
-        if (newStatus == OrderStatus.REFUNDED) {
-            throw new BusinessRuleException("Use the refund endpoint to mark an order as refunded");
-        }
-        if (newStatus != OrderStatus.CONFIRMED && newStatus != OrderStatus.PAYMENT_FAILED && newStatus != OrderStatus.DELIVERED) {
-            throw new BusinessRuleException("Cannot set an order's status to " + newStatus);
+        Order order = getOrderForUpdateOrThrow(orderId);
+        // Re-submitting the order's current status (to save only the notes) is always allowed; a real change must be a settable target and a legal move.
+        if (newStatus != order.getStatus()) {
+            if (newStatus == OrderStatus.REFUNDED) {
+                throw new BusinessRuleException("Use the refund endpoint to mark an order as refunded");
+            }
+            if (newStatus != OrderStatus.CONFIRMED && newStatus != OrderStatus.PAYMENT_FAILED
+                    && newStatus != OrderStatus.SHIPPED && newStatus != OrderStatus.DELIVERED) {
+                throw new BusinessRuleException("Cannot set an order's status to " + newStatus.label());
+            }
+            requireTransition(order.getStatus(), newStatus);
         }
 
-        Order order = getOrderEntityOrThrow(orderId);
         AdminOrderDetailResponse before = getOrderDetailForAdmin(orderId);
         order.setAdminNotes(adminNotes);
         orderRepository.save(order);
 
         if (newStatus != order.getStatus()) {
-            if (newStatus == OrderStatus.CONFIRMED) {
-                markConfirmed(orderId);
-            } else if (newStatus == OrderStatus.DELIVERED) {
-                markDelivered(orderId);
-            } else {
-                markPaymentFailed(orderId);
+            switch (newStatus) {
+                case CONFIRMED -> markConfirmed(orderId);
+                case SHIPPED -> markShipped(orderId);
+                case DELIVERED -> markDelivered(orderId);
+                default -> markPaymentFailed(orderId);
             }
         }
 
@@ -493,11 +560,77 @@ public class OrderServiceImpl implements OrderService {
         return "ORD-" + timePart + "-" + randomPart;
     }
 
-    private void recordStatusHistory(Order order, OrderStatus status, String note) {
+    /**
+     * The one place an order's status changes. Every path — admin, payment
+     * webhook, refund — goes through here, so each real change:
+     * <ol>
+     *   <li>is checked against {@link OrderStatus#canTransitionTo} (else a 422);</li>
+     *   <li>writes one history row recording the actor;</li>
+     *   <li>publishes the one event whose notification the customer receives.</li>
+     * </ol>
+     * Setting the status the order already has changes nothing and sends
+     * nothing (returns false), so a repeated click or a duplicate webhook can
+     * never produce a duplicate history row or a duplicate push.
+     * Callers hold the row lock from {@link #getOrderForUpdateOrThrow}.
+     */
+    private boolean applyTransition(Order order, OrderStatus newStatus, StatusChangeActor actor, String note) {
+        OrderStatus current = order.getStatus();
+        if (current == newStatus) {
+            return false;
+        }
+        requireTransition(current, newStatus);
+
+        order.setStatus(newStatus);
+        orderRepository.save(order);
+        recordStatusHistory(order, newStatus, note, actor);
+        publishStatusEvent(order, newStatus);
+        return true;
+    }
+
+    private static void requireTransition(OrderStatus current, OrderStatus target) {
+        if (!current.canTransitionTo(target)) {
+            throw new BusinessRuleException(
+                    "This order is " + current.label() + " and cannot be changed to " + target.label());
+        }
+    }
+
+    private void publishStatusEvent(Order order, OrderStatus newStatus) {
+        switch (newStatus) {
+            case CONFIRMED -> eventPublisher.publishEvent(new OrderConfirmedEvent(order.getId(), order.getUserId()));
+            case SHIPPED -> eventPublisher.publishEvent(new OrderShippedEvent(order.getId(), order.getUserId()));
+            case DELIVERED -> eventPublisher.publishEvent(new OrderDeliveredEvent(order.getId(), order.getUserId()));
+            case PAYMENT_FAILED -> eventPublisher.publishEvent(
+                    new PaymentFailedEvent(PAYABLE_TYPE_ORDER, order.getId(), order.getUserId()));
+            case REFUNDED -> eventPublisher.publishEvent(new RefundProcessedEvent(
+                    PAYABLE_TYPE_ORDER, order.getId(), order.getUserId(), order.getTotalAmount()));
+            case PENDING_PAYMENT -> {
+                // Never a transition target: an order starts here at checkout, which publishes OrderPlacedEvent itself.
+            }
+        }
+    }
+
+    /**
+     * The status-changing methods other than checkout are only reachable from
+     * the payment webhook (not authenticated: SYSTEM) or an admin endpoint
+     * (authenticated: ADMIN).
+     */
+    private StatusChangeActor currentActor() {
+        Long userId = currentUserProvider.getCurrentUserIdOrNull();
+        return userId == null ? StatusChangeActor.system() : StatusChangeActor.admin(userId);
+    }
+
+    private Order getOrderForUpdateOrThrow(Long orderId) {
+        return orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
+    }
+
+    private void recordStatusHistory(Order order, OrderStatus status, String note, StatusChangeActor actor) {
         OrderStatusHistory history = new OrderStatusHistory();
         history.setOrder(order);
         history.setStatus(status);
         history.setNote(note);
+        history.setChangedByRole(actor.role());
+        history.setChangedByUserId(actor.userId());
         orderStatusHistoryRepository.save(history);
     }
 

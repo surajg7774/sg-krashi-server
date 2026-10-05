@@ -20,9 +20,13 @@ public record AdminOrderDetailResponse(
         String shippingState,
         String shippingPincode,
         List<OrderItemResponse> items,
-        List<OrderStatusEventResponse> statusHistory,
+        List<AdminOrderStatusEventResponse> statusHistory,
         String adminNotes,
         boolean refunded,
         Instant refundedAt,
-        Instant createdAt
+        Instant createdAt,
+        /** Gateway payment status (CREATED/PAID/FAILED/REFUNDED), null if no payment was ever started. */
+        String paymentStatus,
+        /** Non-null when the order needs an admin's attention — see {@code OrderServiceImpl#attentionMessage}. */
+        String attentionMessage
 ) {}

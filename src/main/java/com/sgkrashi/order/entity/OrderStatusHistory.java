@@ -34,6 +34,14 @@ public class OrderStatusHistory {
     @Column(name = "note")
     private String note;
 
+    /** Null for rows written before V40 — the actor was never recorded then. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "changed_by_role", length = 20)
+    private StatusChangeActor.Role changedByRole;
+
+    @Column(name = "changed_by_user_id")
+    private Long changedByUserId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -72,6 +80,22 @@ public class OrderStatusHistory {
 
     public void setNote(String note) {
         this.note = note;
+    }
+
+    public StatusChangeActor.Role getChangedByRole() {
+        return changedByRole;
+    }
+
+    public void setChangedByRole(StatusChangeActor.Role changedByRole) {
+        this.changedByRole = changedByRole;
+    }
+
+    public Long getChangedByUserId() {
+        return changedByUserId;
+    }
+
+    public void setChangedByUserId(Long changedByUserId) {
+        this.changedByUserId = changedByUserId;
     }
 
     public Instant getCreatedAt() {

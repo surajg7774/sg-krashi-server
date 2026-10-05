@@ -5,11 +5,13 @@ import com.sgkrashi.order.dto.response.AdminOrderDetailResponse;
 import com.sgkrashi.order.dto.response.AdminOrderSummaryResponse;
 import com.sgkrashi.order.dto.response.OrderItemResponse;
 import com.sgkrashi.order.dto.response.OrderResponse;
+import com.sgkrashi.order.dto.response.AdminOrderStatusEventResponse;
 import com.sgkrashi.order.dto.response.OrderStatusEventResponse;
 import com.sgkrashi.order.dto.response.OrderSummaryResponse;
 import com.sgkrashi.order.entity.Order;
 import com.sgkrashi.order.entity.OrderItem;
 import com.sgkrashi.order.entity.OrderStatusHistory;
+import com.sgkrashi.order.entity.StatusChangeActor;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -48,6 +50,16 @@ public class OrderMapper {
 
     public OrderStatusEventResponse toStatusEventResponse(OrderStatusHistory event) {
         return new OrderStatusEventResponse(event.getStatus(), event.getNote(), event.getCreatedAt());
+    }
+
+    public AdminOrderStatusEventResponse toAdminStatusEventResponse(OrderStatusHistory event, Map<Long, String> actorNames) {
+        Long actorId = event.getChangedByUserId();
+        String actorName = event.getChangedByRole() == StatusChangeActor.Role.ADMIN && actorId != null
+                ? actorNames.get(actorId)
+                : null;
+        return new AdminOrderStatusEventResponse(
+                event.getStatus(), event.getNote(), event.getCreatedAt(),
+                event.getChangedByRole(), actorId, actorName);
     }
 
     public OrderResponse toOrderResponse(
@@ -93,7 +105,8 @@ public class OrderMapper {
     }
 
     public AdminOrderSummaryResponse toAdminSummaryResponse(
-            Order order, int itemCount, String userName, String userEmail, boolean refunded, Instant refundedAt
+            Order order, int itemCount, String userName, String userEmail, boolean refunded, Instant refundedAt,
+            boolean needsAttention
     ) {
         return new AdminOrderSummaryResponse(
                 order.getId(),
@@ -106,7 +119,8 @@ public class OrderMapper {
                 itemCount,
                 refunded,
                 refundedAt,
-                order.getCreatedAt()
+                order.getCreatedAt(),
+                needsAttention
         );
     }
 
@@ -119,13 +133,16 @@ public class OrderMapper {
             String userName,
             String userEmail,
             boolean refunded,
-            Instant refundedAt
+            Instant refundedAt,
+            Map<Long, String> actorNames,
+            String paymentStatus,
+            String attentionMessage
     ) {
         List<OrderItemResponse> itemResponses = items.stream()
                 .map(item -> toItemResponse(item, productThumbnails, cropListingThumbnails))
                 .toList();
-        List<OrderStatusEventResponse> historyResponses = history.stream()
-                .map(this::toStatusEventResponse)
+        List<AdminOrderStatusEventResponse> historyResponses = history.stream()
+                .map(event -> toAdminStatusEventResponse(event, actorNames))
                 .toList();
 
         return new AdminOrderDetailResponse(
@@ -146,7 +163,9 @@ public class OrderMapper {
                 order.getAdminNotes(),
                 refunded,
                 refundedAt,
-                order.getCreatedAt()
+                order.getCreatedAt(),
+                paymentStatus,
+                attentionMessage
         );
     }
 }

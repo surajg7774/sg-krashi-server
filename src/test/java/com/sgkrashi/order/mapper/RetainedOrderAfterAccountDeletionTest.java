@@ -59,7 +59,7 @@ class RetainedOrderAfterAccountDeletionTest {
         User gone = anonymizedUser(42);
         AdminOrderDetailResponse detail = new OrderMapper().toAdminDetailResponse(
                 retainedOrder(42), List.of(), List.of(), Map.of(), Map.of(),
-                gone.getName(), gone.getEmail(), false, null);
+                gone.getName(), gone.getEmail(), false, null, Map.of(), null, null);
 
         assertEquals("Deleted user", detail.userName());
         assertEquals("deleted-42@deleted.invalid", detail.userEmail());
@@ -74,7 +74,7 @@ class RetainedOrderAfterAccountDeletionTest {
     void theAdminOrderListStillRenders() {
         User gone = anonymizedUser(42);
         AdminOrderSummaryResponse summary = new OrderMapper().toAdminSummaryResponse(
-                retainedOrder(42), 2, gone.getName(), gone.getEmail(), false, null);
+                retainedOrder(42), 2, gone.getName(), gone.getEmail(), false, null, false);
 
         assertEquals("Deleted user", summary.userName());
         assertEquals(42L, summary.userId());

@@ -57,6 +57,8 @@ public class RefundServiceImpl implements RefundService {
     @Transactional
     public RefundResultResponse refundOrder(Long orderId) {
         Order order = orderService.getOrderEntityOrThrow(orderId);
+        // Before processRefund: the gateway refund cannot be rolled back, so never start it for an order that cannot become REFUNDED.
+        orderService.assertCanBeRefunded(order.getId());
         return processRefund(PAYABLE_TYPE_ORDER, order.getId(), () -> orderService.markRefunded(order.getId()));
     }
 

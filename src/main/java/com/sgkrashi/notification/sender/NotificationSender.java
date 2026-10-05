@@ -17,4 +17,14 @@ import com.sgkrashi.notification.entity.Notification;
 public interface NotificationSender {
 
     void send(Notification notification, User user);
+
+    /**
+     * True for the push channel. A notification created with {@code sendPush =
+     * false} (see {@code NotificationService#notify}) is still saved in-app and
+     * still goes out by every non-push sender (email), but skips this one — used
+     * for "order placed", which the customer has just seen on screen.
+     */
+    default boolean isPush() {
+        return false;
+    }
 }
