@@ -14,6 +14,7 @@ public interface MandiPriceService {
 
     MandiFilterOptionsResponse getFilterOptions(String state);
 
+    /** One point per day, ascending — the average modal price across whichever markets match the filters (a single market's own price when {@code market} is given). */
     List<MandiTrendPointResponse> getTrend(String commodity, String state, String market);
 
     MandiSyncMetaResponse getSyncMeta();

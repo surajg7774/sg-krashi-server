@@ -13,8 +13,14 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 @Service
 public class MandiPriceServiceImpl implements MandiPriceService {
@@ -44,9 +50,24 @@ public class MandiPriceServiceImpl implements MandiPriceService {
 
     @Override
     public List<MandiTrendPointResponse> getTrend(String commodity, String state, String market) {
-        return mandiPriceRepository.findTrend(commodity, blankToNull(state), blankToNull(market)).stream()
-                .map(p -> new MandiTrendPointResponse(p.getPriceDate(), p.getModalPrice()))
+        // One point per day: rows are unique per (commodity, market, date), so with
+        // no market filter a day has one row per market — averaged here rather than
+        // returned raw, otherwise a chart zig-zags between markets' prices. With a
+        // market filter each day is a single row, so the average is just that row.
+        Map<LocalDate, List<BigDecimal>> modalPricesByDate = mandiPriceRepository
+                .findTrend(commodity, blankToNull(state), blankToNull(market)).stream()
+                .collect(Collectors.groupingBy(
+                        MandiPrice::getPriceDate, TreeMap::new,
+                        Collectors.mapping(MandiPrice::getModalPrice, Collectors.toList())));
+        return modalPricesByDate.entrySet().stream()
+                .map(e -> new MandiTrendPointResponse(e.getKey(), average(e.getValue())))
                 .toList();
+    }
+
+    private static BigDecimal average(List<BigDecimal> values) {
+        return values.stream()
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .divide(BigDecimal.valueOf(values.size()), 2, RoundingMode.HALF_UP);
     }
 
     @Override

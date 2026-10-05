@@ -6,6 +6,7 @@ import com.sgkrashi.weather.client.GeocodingApiClient;
 import com.sgkrashi.weather.dto.response.GeocodingResultResponse;
 import com.sgkrashi.weather.dto.response.PublicWeatherResponse;
 import com.sgkrashi.weather.exception.WeatherDataUnavailableException;
+import com.sgkrashi.weather.service.DailyForecastService;
 import com.sgkrashi.weather.service.PublicWeatherService;
 import org.springframework.stereotype.Service;
 
@@ -17,10 +18,16 @@ public class PublicWeatherServiceImpl implements PublicWeatherService {
 
     private final WeatherService weatherService;
     private final GeocodingApiClient geocodingApiClient;
+    private final DailyForecastService dailyForecastService;
 
-    public PublicWeatherServiceImpl(WeatherService weatherService, GeocodingApiClient geocodingApiClient) {
+    public PublicWeatherServiceImpl(
+            WeatherService weatherService,
+            GeocodingApiClient geocodingApiClient,
+            DailyForecastService dailyForecastService
+    ) {
         this.weatherService = weatherService;
         this.geocodingApiClient = geocodingApiClient;
+        this.dailyForecastService = dailyForecastService;
     }
 
     @Override
@@ -34,7 +41,8 @@ public class PublicWeatherServiceImpl implements PublicWeatherService {
                 s.recentRainfallMm(),
                 s.forecastSummary(),
                 s.forecastMinTempCelsius(),
-                s.forecastPrecipitationNext24hMm());
+                s.forecastPrecipitationNext24hMm(),
+                dailyForecastService.getDailyForecast(latitude, longitude));
     }
 
     @Override
