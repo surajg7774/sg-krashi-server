@@ -128,7 +128,7 @@ public class NotificationServiceImpl implements NotificationService {
                 sender.send(persisted.notification(), persisted.user());
             } catch (Exception ex) {
                 log.warn("Notification sender {} failed for notification {}: {}",
-                        sender.getClass().getSimpleName(), persisted.notification().getId(), ex.getMessage());
+                        sender.getClass().getSimpleName(), persisted.notification().getId(), ex.getClass().getSimpleName());
             }
         }
     }

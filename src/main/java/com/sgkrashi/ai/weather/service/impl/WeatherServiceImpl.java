@@ -58,7 +58,7 @@ public class WeatherServiceImpl implements WeatherService {
             // failed the freshness check above, and serving weather that's
             // known to be more than CACHE_TTL old as if it were current would
             // be its own kind of dishonesty toward the model/user.
-            log.warn("Weather unavailable, proceeding without weather grounding: {}", ex.getMessage());
+            log.warn("Weather unavailable, proceeding without weather grounding: {}", ex.getClass().getSimpleName());
             return Optional.empty();
         }
     }
@@ -68,7 +68,7 @@ public class WeatherServiceImpl implements WeatherService {
         try {
             return Optional.of(weatherApiClient.fetch(latitude, longitude));
         } catch (WeatherUnavailableException ex) {
-            log.warn("Weather unavailable for ({}, {}): {}", latitude, longitude, ex.getMessage());
+            log.warn("Weather unavailable: {}", ex.getClass().getSimpleName());
             return Optional.empty();
         }
     }

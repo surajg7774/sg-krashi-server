@@ -27,7 +27,7 @@ public class CurrentUserProvider {
     public User getCurrentUser() {
         String email = SecurityContextHolder.getContext().getAuthentication().getName();
         return userRepository.findByEmail(email)
-                .orElseThrow(() -> new IllegalStateException("Authenticated user not found: " + email));
+                .orElseThrow(() -> new IllegalStateException("Authenticated user not found"));
     }
 
     public Long getCurrentUserId() {

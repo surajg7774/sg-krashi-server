@@ -132,10 +132,10 @@ public class GoogleAuthServiceImpl implements GoogleAuthService {
             }
             return token.getPayload();
         } catch (GeneralSecurityException | IllegalArgumentException ex) {
-            log.warn("Google ID token verification failed: {}", ex.getMessage());
+            log.warn("Google ID token verification failed: {}", ex.getClass().getSimpleName());
             throw new InvalidGoogleTokenException("Google sign-in token could not be verified.", ex);
         } catch (java.io.IOException ex) {
-            log.warn("Google ID token verification failed (network): {}", ex.getMessage());
+            log.warn("Google ID token verification failed (network): {}", ex.getClass().getSimpleName());
             throw new InvalidGoogleTokenException("Could not reach Google to verify the sign-in token.", ex);
         }
     }
@@ -181,8 +181,8 @@ public class GoogleAuthServiceImpl implements GoogleAuthService {
             try {
                 sender.send(transientNotification, user);
             } catch (Exception ex) {
-                log.warn("Welcome email failed to send via {} for {}: {}",
-                        sender.getClass().getSimpleName(), user.getEmail(), ex.getMessage());
+                log.warn("Welcome email failed to send via {} for userId={}: {}",
+                        sender.getClass().getSimpleName(), user.getId(), ex.getClass().getSimpleName());
             }
         }
     }

@@ -103,7 +103,7 @@ public class FcmNotificationSender implements NotificationSender {
                 log.info("Pruning dead FCM token for user {}: {}", deviceToken.getUserId(), ex.getMessagingErrorCode());
                 deviceTokenService.unregister(deviceToken.getToken());
             } else {
-                log.warn("FCM send failed for user {}: {}", deviceToken.getUserId(), ex.getMessage());
+                log.warn("FCM send failed for user {}: {}", deviceToken.getUserId(), ex.getMessagingErrorCode());
             }
         }
     }

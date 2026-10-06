@@ -68,7 +68,7 @@ public class DailyForecastServiceImpl implements DailyForecastService {
             // Deliberately not falling back to the expired entry (same reasoning
             // as WeatherServiceImpl): the chart shows nothing rather than a
             // forecast known to be stale.
-            log.warn("Daily forecast unavailable for ({}, {}): {}", latitude, longitude, ex.getMessage());
+            log.warn("Daily forecast unavailable: {}", ex.getClass().getSimpleName());
             cache.remove(key);
             return List.of();
         }

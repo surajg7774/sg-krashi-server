@@ -177,7 +177,7 @@ public class CropScanReportServiceImpl implements CropScanReportService {
                 image.setAlignment(Image.ALIGN_CENTER);
                 document.add(image);
             } catch (Exception ex) {
-                log.warn("Could not embed scan image in PDF report ({}): {}", imageUrl, ex.getMessage());
+                log.warn("Could not embed scan image in PDF report: {}", ex.getClass().getSimpleName());
                 document.add(new Paragraph("(Image could not be loaded)", mutedFont));
             }
         }

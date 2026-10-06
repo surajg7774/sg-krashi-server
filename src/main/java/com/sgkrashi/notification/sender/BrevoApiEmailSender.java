@@ -70,11 +70,10 @@ public class BrevoApiEmailSender implements NotificationSender {
                     .timeout(TIMEOUT)
                     .block();
         } catch (WebClientResponseException ex) {
-            log.warn("Brevo API returned {} {}: {}", ex.getStatusCode(), ex.getStatusText(),
-                    ex.getResponseBodyAsString());
+            log.warn("Brevo API returned {} {}", ex.getStatusCode(), ex.getStatusText());
             throw new IllegalStateException("Brevo API returned an error response", ex);
         } catch (WebClientRequestException ex) {
-            log.warn("Brevo API unreachable: {}", ex.getMessage());
+            log.warn("Brevo API unreachable: {}", ex.getClass().getSimpleName());
             throw new IllegalStateException("Brevo API is unreachable", ex);
         }
     }

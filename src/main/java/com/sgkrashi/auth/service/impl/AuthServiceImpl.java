@@ -131,7 +131,7 @@ public class AuthServiceImpl implements AuthService {
         String otp = issueOtp(pending);
         pendingRegistrationRepository.save(pending);
 
-        log.info("Registration pending OTP verification for {}", request.email());
+        log.info("Registration pending OTP verification");
         sendOtpEmail(request.name(), request.email(), otp);
     }
 
@@ -241,8 +241,8 @@ public class AuthServiceImpl implements AuthService {
             try {
                 sender.send(transientNotification, pendingUser);
             } catch (Exception ex) {
-                log.warn("OTP email failed to send via {} for {}: {}",
-                        sender.getClass().getSimpleName(), email, ex.getMessage());
+                log.warn("OTP email failed to send via {}: {}",
+                        sender.getClass().getSimpleName(), ex.getClass().getSimpleName());
             }
         }
     }
@@ -331,15 +331,16 @@ public class AuthServiceImpl implements AuthService {
      * sender is isolated the same way {@code NotificationServiceImpl.notify}
      * isolates its senders: a broken SMTP connection must not surface as a
      * 500 here, since that would reveal whether the email was registered.
-     * Still logs the link too — useful in local dev without needing a real
-     * inbox, and this is a server log, not anything user-facing.
+     * The link and the address are deliberately never logged: the token is a
+     * live credential for 30 minutes and server logs are retained by the host.
+     * Only the numeric user id and the failure class are logged.
      */
     @Override
     public void forgotPassword(ForgotPasswordRequest request) {
         userRepository.findByEmail(request.email()).ifPresent(user -> {
             String resetToken = jwtTokenProvider.generatePasswordResetToken(user.getEmail());
             String resetLink = frontendUrl + "/reset-password?token=" + resetToken;
-            log.info("Password reset requested for {}. Reset link: {}", user.getEmail(), resetLink);
+            log.info("Password reset requested for userId={}", user.getId());
 
             Notification transientNotification = new Notification();
             transientNotification.setTitle("Reset Your SG Krashi Password");
@@ -352,8 +353,8 @@ public class AuthServiceImpl implements AuthService {
                 try {
                     sender.send(transientNotification, user);
                 } catch (Exception ex) {
-                    log.warn("Password reset email failed to send via {} for {}: {}",
-                            sender.getClass().getSimpleName(), user.getEmail(), ex.getMessage());
+                    log.warn("Password reset email failed to send via {} for userId={}: {}",
+                            sender.getClass().getSimpleName(), user.getId(), ex.getClass().getSimpleName());
                 }
             }
         });

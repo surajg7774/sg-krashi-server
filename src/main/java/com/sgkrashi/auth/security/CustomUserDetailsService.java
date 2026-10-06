@@ -28,7 +28,7 @@ public class CustomUserDetailsService implements UserDetailsService {
     @Override
     public UserDetails loadUserByUsername(String email) {
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new UsernameNotFoundException("No user with email " + email));
+                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
 
         // A Google-only account (see User's Javadoc) has passwordHash =
         // null. Spring Security's own User.builder().password(null) throws
