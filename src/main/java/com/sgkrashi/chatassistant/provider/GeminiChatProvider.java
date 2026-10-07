@@ -1,5 +1,6 @@
 package com.sgkrashi.chatassistant.provider;
 
+import com.sgkrashi.ai.GeminiApiKey;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -84,7 +85,8 @@ public class GeminiChatProvider implements ChatAssistantProvider {
         String responseBody;
         try {
             responseBody = webClient.post()
-                    .uri("/v1beta/models/{model}:generateContent?key={key}", model, apiKey)
+                    .uri("/v1beta/models/{model}:generateContent", model)
+                    .header(GeminiApiKey.HEADER, apiKey)
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(payload)
                     .retrieve()

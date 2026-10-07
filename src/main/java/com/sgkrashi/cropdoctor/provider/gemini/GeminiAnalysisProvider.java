@@ -1,5 +1,6 @@
 package com.sgkrashi.cropdoctor.provider.gemini;
 
+import com.sgkrashi.ai.GeminiApiKey;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -142,7 +143,8 @@ public class GeminiAnalysisProvider implements CropAnalysisProvider {
         String responseBody;
         try {
             responseBody = webClient.post()
-                    .uri("/v1beta/models/{model}:generateContent?key={key}", model, apiKey)
+                    .uri("/v1beta/models/{model}:generateContent", model)
+                    .header(GeminiApiKey.HEADER, apiKey)
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(payload)
                     .retrieve()

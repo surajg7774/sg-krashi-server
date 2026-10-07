@@ -6,6 +6,7 @@ import com.sgkrashi.common.dto.PaginatedResponse;
 import com.sgkrashi.common.exception.ResourceNotFoundException;
 import com.sgkrashi.common.util.SlugUtil;
 import com.sgkrashi.farmstay.dto.request.StayListingAdminRequest;
+import com.sgkrashi.farmstay.dto.response.PublicStayListingDetailResponse;
 import com.sgkrashi.farmstay.dto.response.StayListingDetailResponse;
 import com.sgkrashi.farmstay.dto.response.StayListingSummaryResponse;
 import com.sgkrashi.farmstay.entity.StayListing;
@@ -75,8 +76,13 @@ public class StayListingServiceImpl implements StayListingService {
     }
 
     @Override
-    public StayListingDetailResponse getStayDetail(String idOrSlug) {
-        return buildDetailResponse(resolveListing(idOrSlug));
+    public PublicStayListingDetailResponse getStayDetail(String idOrSlug) {
+        StayListing listing = resolveListing(idOrSlug);
+        List<MediaAssetResponse> media = mediaAssetRepository
+                .findByOwnerTypeAndOwnerIdOrderBySortOrderAsc(STAY_OWNER_TYPE, listing.getId()).stream()
+                .map(mediaAssetMapper::toResponse)
+                .toList();
+        return stayListingMapper.toPublicDetail(listing, media);
     }
 
     /** See {@code ProductServiceImpl.buildDetailResponse}'s Javadoc for why Admin create/update use this directly instead of {@link #getStayDetail}. */

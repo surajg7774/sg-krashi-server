@@ -20,7 +20,7 @@ rely on Railway keeping trial data or services running after the trial ends.
 |---|---|
 | Project | `sg-krashi-server` (id `5c74ecb2-67ed-4b3a-8f68-bf2ee1f4169e`), one `production` environment, region `sfo` |
 | **sg-krashi-server** | Built from the `Dockerfile` in this repo's root (multi-stage Maven build, Java 21 JRE, listens on **8080**, runs as a non-root user). Deployed with `railway up` from the repo root. **GitHub auto-deploy does not work** for this repo/account pairing, so every deploy is `railway up`. Public domain `sg-krashi-server-production-8583.up.railway.app`, target port left on auto. **No healthcheck path** and no start command set. 1 replica. |
-| **MySQL** | Image `mysql:9.4`, database `railway`, one 500 MB volume at `/var/lib/mysql` (about 3 MB used). Start command `docker-entrypoint.sh mysqld --innodb-use-native-aio=0 --disable-log-bin --performance_schema=0 --innodb-buffer-pool-size=1G`. Private name `mysql.railway.internal:3306`. **A public TCP proxy is enabled** (`*.proxy.rlwy.net`). The only accounts are `root@%` and `root@localhost`. |
+| **MySQL** | Image `mysql:9.4`, database `railway`, one 500 MB volume at `/var/lib/mysql` (about 3 MB used). Start command `docker-entrypoint.sh mysqld --innodb-use-native-aio=0 --disable-log-bin --performance_schema=0 --innodb-buffer-pool-size=1G`. Private name `mysql.railway.internal:3306`. **The public TCP proxy that used to exist was deleted on 2026-10-07**; the database is reachable only on the private network and over `railway ssh` (section 8.0). The only accounts are `root@%` and `root@localhost`. |
 | **db-backup** | Cron service built from `backup/` (its own `Dockerfile` on `mysql:9.4`, with `age` and `rclone` pinned by checksum). Schedule `30 21 * * *` UTC (03:00 IST), restart policy `NEVER`. Connects to MySQL over the private network **as root**. |
 | Database settings | Server charset `utf8mb4`, collation `utf8mb4_0900_ai_ci`, `sql_mode` = MySQL 9.4 default (`ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION`), `time_zone = SYSTEM` (UTC on the host), `max_allowed_packet` 64 MiB, `lower_case_table_names = 0`. All 39 tables are `utf8mb4_0900_ai_ci`. **A stock `mysql:9.4` container has exactly these defaults**, so nothing needs configuring. (The live buffer pool is 128 MiB although the start command asks for 1 GiB; the data is tiny, so either is fine.) |
 | Outside Railway (they move nothing) | **Backblaze B2** bucket with the encrypted backups, the **age** key pair, **Healthchecks.io**, **Cloudinary** (all product, crop and equipment photos), **Brevo** (email), **Gemini**, **Firebase/FCM**, **Razorpay**, **Vercel** (web), **Expo/EAS** (mobile builds). |
@@ -185,8 +185,8 @@ app's is `API_BASE_URL` in `src/api/client.ts`. The server has no copy.
    **`MYSQL_DATABASE=railway`**. Add a **volume mounted at `/var/lib/mysql`** (at least 1 GB). Set the start command
    to `docker-entrypoint.sh mysqld --innodb-use-native-aio=0 --disable-log-bin --performance_schema=0` (the same
    flags as today; the buffer-pool flag can stay at the default for this data size). **Name the service `MySQL`**:
-   its private address becomes `mysql.railway.internal`. **Do not enable the public TCP proxy yet** (step 5 turns it
-   on for the restore only).
+   its private address becomes `mysql.railway.internal`. **Do not enable a public TCP proxy**; use `railway ssh` for
+   database access (section 8.0).
 3. **Create the two limited database users** instead of using `root` (section 7). Use the private address and the
    `root` password only for this one step and for the restore.
 4. **Server service.** Create an empty service `sg-krashi-server`. In **Settings, Networking**, generate a public
@@ -221,7 +221,7 @@ three statements below were tested in the rehearsal**: the app booted, ran Flywa
 restored backup, and re-applied account deletions with `sgk_app`; the real `backup.sh` ran with `sgk_backup`.
 
 ```sql
--- run once as root (use the private address, or the TCP proxy for the restore session)
+-- run once as root, through `railway ssh --service MySQL` (section 8.0), e.g. the whole block as one -e "..." argument
 CREATE USER 'sgk_app'@'%' IDENTIFIED BY '<new long random password>';
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, INDEX, REFERENCES,
       CREATE TEMPORARY TABLES, LOCK TABLES ON railway.* TO 'sgk_app'@'%';
@@ -238,12 +238,58 @@ GRANT SELECT, SHOW VIEW, TRIGGER, EVENT, LOCK TABLES ON railway.* TO 'sgk_backup
   **before** the server starts. (A restore does not touch users.)
 - `root` is then used only by you, for the restore and for emergencies. **Never put `root` in a service's
   variables again.**
-- Do not enable the TCP proxy after the restore (or turn it off again immediately). This also closes the open
-  security items "public MySQL proxy" and "app and backup connect as root".
+- Do not leave a TCP proxy enabled (see section 8.0 for the one step that may need one, and how to remove it). This
+  also closes the open security items "public MySQL proxy" and "app and backup connect as root".
 
 ---
 
 ## 8. Restoring the backup (the rehearsal and the real night use the same steps)
+
+### 8.0 Reaching the database without the public proxy (tested on the old project)
+
+The old project's public TCP proxy was deleted (2026-10-07). Database access, including read-only checks and the
+row-count verification below, goes through the Railway CLI over SSH. **One-time setup per laptop:**
+
+1. `ssh-keygen -t ed25519 -C "railway-sg-krashi" -N "" -f ~/.ssh/railway_sg_krashi` (no passphrase, a dedicated file;
+   never print or commit the private key).
+2. `railway ssh keys add --key "railway-sg-krashi" --name railway-sg-krashi` (registers **only the public key**;
+   the `--key <path>.pub` form failed on a path containing a space, so pass the key comment).
+3. Run `railway ssh --service MySQL` once by hand and answer `yes` to the host-key question. Non-interactive runs fail
+   with "Host key verification failed" until this is done.
+
+**Command that works** (run from the folder linked to the project with `railway link`; the password is read from the
+container's own environment and never printed):
+
+```
+railway ssh --service MySQL -- sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot railway -e "<read-only SQL>"'
+```
+
+Tested on the old project with `SELECT VERSION(); SELECT COUNT(*) FROM users;` (answers `9.4.0` and `12`). Use it for the
+limited-user statements in section 7, the row counts in step 6 below, and any later check.
+
+**What it does not cover.** The restore load (step 5) and `reapply-deletions.sh` (step 7) run on your laptop and need a
+MySQL host and port. Two ways:
+
+- **Pipe over SSH (not tested yet).** Replace the `-e "..."` part with nothing and feed the decrypted SQL on stdin:
+  `... | railway ssh --service MySQL -- sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot railway'`. Before relying on
+  it, test with `echo 'SELECT 1;' | railway ssh ...` during the rehearsal. `reapply-deletions.sh` cannot use this form.
+- **Temporary TCP proxy on the NEW project, only for steps 5 and 7.** Create it in the dashboard (MySQL service,
+  Settings, Networking, TCP Proxy), run the load and the script against its host and port, then **delete it at once**.
+  Deleting from the CLI (this is how it was done on the old project; the CLI has no proxy command, so it uses its own
+  logged-in API access, no token to copy):
+  ```
+  railway api 'query { tcpProxies(environmentId: "<env id>", serviceId: "<MySQL service id>") { id domain proxyPort } }'
+  railway api 'mutation { tcpProxyDelete(id: "<proxy id from above>") }'
+  ```
+  Confirm with the first query that the list is empty.
+
+**After the migration, clean up the SSH access:**
+
+- [ ] Remove the key from the Railway account: `railway ssh keys remove` (key name `railway-sg-krashi`, fingerprint
+      `SHA256:orX0CvsII4eHakaQXq6nScNvXe9w2tJ9fE9MZGIw19g`) or https://railway.com/account/ssh-keys.
+- [ ] Delete the local files `~/.ssh/railway_sg_krashi` and `~/.ssh/railway_sg_krashi.pub` (and the Railway gateway
+      line the host-key question added to `~/.ssh/known_hosts`, if you want it gone).
+- [ ] If a new key was made for the new account, remove that one too once you no longer need SSH access.
 
 You need: the newest `mysql-railway-<ts>.sql.gz.age` and its `.manifest.json` from B2, the **age private key**, and
 Docker. This uses the repo's `backup/` image, which has `age`, `gzip` and the MySQL 9.4 client. **The decrypted
@@ -253,9 +299,9 @@ data never has to touch the disk**: it is streamed into MySQL.
    `BACKUP.md`). Put them in an empty folder.
 2. **Verify the file**: `sha256sum <file>.sql.gz.age` must equal `backup_sha256` in the manifest. (This needs no
    key.) Stop if it differs.
-3. **Make the new database reachable for the restore only.** Either enable the new MySQL service's TCP proxy
-   temporarily and note its address and port, or run the restore from a one-off container inside the project's
-   private network. The first is simpler. **Turn the proxy off again at step 8.**
+3. **Make the new database reachable for the load.** The checks in step 6 use `railway ssh` (section 8.0). The load
+   in step 5 and the script in step 7 need a MySQL host and port: either pipe over SSH (section 8.0, untested) or
+   create a **temporary TCP proxy on the new project** and note its host and port. **Delete it at step 8.**
 4. **Make sure the target database is empty.** If you ran the server once (section 6, step 4), drop and recreate it:
    `DROP DATABASE railway; CREATE DATABASE railway CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;` (the users
    from section 7 survive this).
@@ -270,7 +316,8 @@ data never has to touch the disk**: it is streamed into MySQL.
    password manager. **The person running the restore mounts the key file themselves** (the `-v` line above); an
    assistant or script must not be given it. **The key is never pasted, printed or committed.** Delete nothing else;
    there is no plaintext file to clean up.
-6. **Verify against the manifest** (the rehearsal's `verify` step): for every table the restored row count must be
+6. **Verify against the manifest** (the rehearsal's `verify` step; run the counts through the `railway ssh` command of
+   section 8.0, so no public access is needed): for every table the restored row count must be
    **between `before` and `after`** in the manifest, there must be **no missing or extra table**, and
    `flyway_schema_history` must list the same versions and checksums with every `success = 1`. A sample SQL for
    counts is in `backup/backup.sh` (`counts()`); the numbers to expect from the newest production manifest at the time
@@ -287,7 +334,7 @@ data never has to touch the disk**: it is streamed into MySQL.
    ```
    It prints ids only. Tested: it skips ids that are already anonymised, and for one that is not it erases the
    profile, tokens, chats and addresses, keeps the order and replaces its address with `[removed]`.
-8. **Turn the TCP proxy off again.**
+8. **If you created a temporary TCP proxy, delete it now** (section 8.0) and confirm the proxy list is empty.
 9. Start (or redeploy) the new server. It validates the migrations on boot and, for a backup that stops at V40,
    **applies V41** automatically.
 
@@ -315,7 +362,7 @@ backup job deployed and its first run successful, the Razorpay webhook still poi
    its next 03:00 IST run will back up the old, frozen database as the "newest" backup and ping Healthchecks
    green, hiding any failure of the new job.** Leave the old project's MySQL service alone.
 5. **Restore into the new project** with section 8 (use the new backup from step 3): download, sha256, empty the
-   database, stream the restore, verify the counts (now exact), re-apply deletions with that manifest, proxy off.
+   database, stream the restore, verify the counts (now exact), re-apply deletions with that manifest, any temporary proxy deleted.
 6. **Start the new server with `FCM_ENABLED=false`** (keep it false). Check `/health`, the logs (Flyway V41
    applied for a V40 backup, no errors) and run the smoke tests (section 10). Push is switched on only in step 9,
    after the cutover is verified.
@@ -423,5 +470,7 @@ and the Vercel/EAS changes.
 - [ ] Update the web fallback and test fixtures and the mobile constant (section 4, items 2 to 4), and build the
       mobile app.
 - [ ] Make sure no TCP proxy is enabled and no service uses `root`.
+- [ ] Remove the Railway SSH key `railway-sg-krashi` from the account and delete the local `~/.ssh/railway_sg_krashi*`
+      files (section 8.0).
 - [ ] After a week, delete the old project's services (the old Railway data is not needed any more).
 - [ ] Re-check the open security items: the Farm-stay public address (server) is unaffected by this move.

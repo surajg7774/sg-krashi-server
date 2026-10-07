@@ -147,3 +147,11 @@ server:
   # one. "framework" delegates to Spring's own ForwardedHeaderFilter, reading
   # the standard X-Forwarded-Proto/X-Forwarded-Host headers.
   forward-headers-strategy: framework
+
+# The API docs list every endpoint (including all /admin ones) and need no login, so
+# they are switched off in production. Dev/local/test keep them (base application.yml).
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false

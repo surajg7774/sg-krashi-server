@@ -17,6 +17,7 @@ import com.sgkrashi.weather.client.GeocodingUnavailableException;
 import com.sgkrashi.weather.exception.WeatherDataUnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -24,13 +25,18 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.DisabledException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * Centralized exception handling for all REST controllers across every module.
@@ -297,6 +303,52 @@ public class GlobalExceptionHandler {
             return handleGoogleOnlyAccount(googleOnly);
         }
         return handleUnexpected(ex);
+    }
+
+    /**
+     * A required multipart part missing from the request (e.g. {@code files} on
+     * the crop-doctor analyze endpoint). Spring throws this, not {@link
+     * MissingServletRequestParameterException}, for parts, and it used to fall
+     * through to the generic 500 (with an ERROR stack trace) below.
+     */
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<ApiErrorResponse> handleMissingPart(MissingServletRequestPartException ex) {
+        log.warn("Missing required request part: {}", ex.getRequestPartName());
+        ApiErrorResponse body = ApiErrorResponse.of(
+                "VALIDATION_ERROR", "Missing required part: " + ex.getRequestPartName(), List.of());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    /** Wrong or absent {@code Content-Type} — a client error (415), not a server fault. */
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ApiErrorResponse> handleUnsupportedMediaType(HttpMediaTypeNotSupportedException ex) {
+        log.warn("Unsupported media type: {}", ex.getContentType());
+        ApiErrorResponse body = ApiErrorResponse.of(
+                "UNSUPPORTED_MEDIA_TYPE", "The request content type is not supported for this endpoint", List.of());
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(body);
+    }
+
+    /** Right path, wrong HTTP method — 405 with the {@code Allow} header the client needs. */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiErrorResponse> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex) {
+        log.warn("Method not allowed: {}", ex.getMethod());
+        ApiErrorResponse body = ApiErrorResponse.of(
+                "METHOD_NOT_ALLOWED", "This HTTP method is not supported for this endpoint", List.of());
+        Set<HttpMethod> allowed = ex.getSupportedHttpMethods();
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED);
+        if (allowed != null && !allowed.isEmpty()) {
+            response.allow(allowed.toArray(new HttpMethod[0]));
+        }
+        return response.body(body);
+    }
+
+    /** A path/query value that can't be converted (e.g. a non-numeric id) — 400. The rejected value is not echoed back or logged. */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiErrorResponse> handleArgumentTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        log.warn("Invalid value for parameter: {}", ex.getName());
+        ApiErrorResponse body = ApiErrorResponse.of(
+                "VALIDATION_ERROR", "Invalid value for parameter: " + ex.getName(), List.of());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
     @ExceptionHandler(Exception.class)

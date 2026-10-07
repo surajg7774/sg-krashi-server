@@ -1,5 +1,6 @@
 package com.sgkrashi.ai.embedding;
 
+import com.sgkrashi.ai.GeminiApiKey;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
@@ -79,7 +80,8 @@ public class EmbeddingServiceImpl implements EmbeddingService {
 
         try {
             String responseBody = webClient.post()
-                    .uri("/v1beta/models/{model}:embedContent?key={key}", model, apiKey)
+                    .uri("/v1beta/models/{model}:embedContent", model)
+                    .header(GeminiApiKey.HEADER, apiKey)
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(payload)
                     .retrieve()

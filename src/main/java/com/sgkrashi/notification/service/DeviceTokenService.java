@@ -9,4 +9,10 @@ public interface DeviceTokenService {
 
     /** Called on logout so a signed-out device stops receiving pushes meant for the account that just logged out. */
     void unregister(String token);
+
+    /**
+     * Like {@link #unregister} but only removes the token if it is registered to {@code userId}; a token
+     * that belongs to someone else (or does not exist) is left alone and the call still succeeds.
+     */
+    void unregisterForUser(Long userId, String token);
 }

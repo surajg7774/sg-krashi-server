@@ -1,5 +1,6 @@
 package com.sgkrashi.farmstay.mapper;
 
+import com.sgkrashi.farmstay.dto.response.PublicStayListingDetailResponse;
 import com.sgkrashi.farmstay.dto.response.StayListingDetailResponse;
 import com.sgkrashi.farmstay.dto.response.StayListingSummaryResponse;
 import com.sgkrashi.farmstay.entity.StayListing;
@@ -23,6 +24,27 @@ public class StayListingMapper {
                 listing.getNightlyRate(),
                 listing.isAvailable(),
                 thumbnailUrl,
+                listing.getAvgRating(),
+                listing.getReviewCount(),
+                listing.isActive(),
+                listing.getCreatedAt()
+        );
+    }
+
+    /** Public (unauthenticated) view: the same listing without street address or pincode. */
+    public PublicStayListingDetailResponse toPublicDetail(StayListing listing, List<MediaAssetResponse> media) {
+        return new PublicStayListingDetailResponse(
+                listing.getId(),
+                listing.getName(),
+                listing.getSlug(),
+                listing.getDescription(),
+                listing.getMaxGuests(),
+                listing.getNightlyRate(),
+                parseAmenities(listing.getAmenities()),
+                listing.getCity(),
+                listing.getState(),
+                listing.isAvailable(),
+                media,
                 listing.getAvgRating(),
                 listing.getReviewCount(),
                 listing.isActive(),

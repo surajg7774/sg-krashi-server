@@ -3,6 +3,7 @@ package com.sgkrashi.notification.controller;
 import com.sgkrashi.auth.security.CurrentUserProvider;
 import com.sgkrashi.common.dto.ApiResponse;
 import com.sgkrashi.notification.dto.request.DeviceTokenRequest;
+import com.sgkrashi.notification.dto.request.UnregisterDeviceTokenRequest;
 import com.sgkrashi.notification.service.DeviceTokenService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -44,6 +45,19 @@ public class DeviceTokenController {
     @DeleteMapping
     public ResponseEntity<ApiResponse<Void>> unregister(@RequestParam String token) {
         deviceTokenService.unregister(token);
+        return ResponseEntity.ok(ApiResponse.success(null, "Device token unregistered"));
+    }
+
+    /**
+     * Body-based replacement for {@code DELETE ?token=}: a device token in the query string ends up
+     * in access logs and proxies, a request body does not. Also stricter — it only removes a token
+     * registered to the authenticated user. The DELETE endpoint above stays as is for already-installed
+     * app versions. Always 200 (even if nothing was removed) so it cannot be used to probe which tokens exist.
+     */
+    @PostMapping("/unregister")
+    public ResponseEntity<ApiResponse<Void>> unregisterByBody(@Valid @RequestBody UnregisterDeviceTokenRequest request) {
+        Long userId = currentUserProvider.getCurrentUserId();
+        deviceTokenService.unregisterForUser(userId, request.token());
         return ResponseEntity.ok(ApiResponse.success(null, "Device token unregistered"));
     }
 }
