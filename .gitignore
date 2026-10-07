@@ -77,3 +77,20 @@ backup/out/
 
 ### Local dev media storage (LocalStorageProvider) ###
 uploads/
+
+# Secrets (safety net, repos may be public)
+.env.*
+!.env.example
+!.env.production.example
+*.keystore
+*.jks
+*.pem
+*.p12
+*.key
+id_rsa*
+*service-account*.json
+*firebase-adminsdk*.json
+*credentials*.json
+secrets/
+SG-Krashi-Secrets/
+.vercel/
