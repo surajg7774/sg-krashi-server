@@ -7,6 +7,7 @@ import com.sgkrashi.insights.dto.response.InsightsResponses.FulfilmentResponse;
 import com.sgkrashi.insights.dto.response.InsightsResponses.OrdersResponse;
 import com.sgkrashi.insights.dto.response.InsightsResponses.SignupsResponse;
 import com.sgkrashi.insights.dto.response.InsightsResponses.SnapshotResponse;
+import com.sgkrashi.insights.dto.response.InsightsResponses.UsageResponse;
 import com.sgkrashi.insights.service.AdminInsightsService;
 import com.sgkrashi.insights.util.Granularity;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -72,6 +73,14 @@ public class AdminInsightsController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(defaultValue = "week") String groupBy) {
         return ResponseEntity.ok(ApiResponse.success(service.activity(from, to, Granularity.parse(groupBy)), "Activity insights retrieved"));
+    }
+
+    @GetMapping("/usage")
+    public ResponseEntity<ApiResponse<UsageResponse>> usage(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(defaultValue = "day") String groupBy) {
+        return ResponseEntity.ok(ApiResponse.success(service.usage(from, to, Granularity.parse(groupBy)), "Usage insights retrieved"));
     }
 
     @GetMapping("/snapshot")

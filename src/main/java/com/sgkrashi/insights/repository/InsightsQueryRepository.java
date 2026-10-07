@@ -202,6 +202,30 @@ public class InsightsQueryRepository {
         return jdbc.query(sql, range(from, to), (rs, i) -> new CountRow(rs.getString("bucket"), rs.getLong("n")));
     }
 
+    // ---- feature usage (usage_daily) -----------------------------------------------------------------------
+
+    public record UsageRow(String bucket, String feature, long count) {
+    }
+
+    /** usage_daily.day is already an India calendar day, so no time-zone conversion is needed here. */
+    public List<UsageRow> usage(Granularity g, LocalDate from, LocalDate to) {
+        String day = "d.day";
+        String bucket = switch (g) {
+            case DAY -> "DATE_FORMAT(" + day + ", '%Y-%m-%d')";
+            case WEEK -> "DATE_FORMAT(DATE_SUB(" + day + ", INTERVAL WEEKDAY(" + day + ") DAY), '%Y-%m-%d')";
+            case MONTH -> "DATE_FORMAT(DATE_SUB(" + day + ", INTERVAL DAYOFMONTH(" + day + ") - 1 DAY), '%Y-%m-%d')";
+        };
+        String sql = "SELECT " + bucket + " AS bucket, d.feature AS feature, SUM(d.`count`) AS n FROM usage_daily d "
+                + "WHERE d.day >= :fromDay AND d.day <= :toDay GROUP BY bucket, d.feature ORDER BY bucket";
+        MapSqlParameterSource params = new MapSqlParameterSource().addValue("fromDay", from.toString()).addValue("toDay", to.toString());
+        return jdbc.query(sql, params, (rs, i) -> new UsageRow(rs.getString("bucket"), rs.getString("feature"), rs.getLong("n")));
+    }
+
+    /** The first day any count was written, as yyyy-MM-dd, or null when nothing has been counted yet. */
+    public String usageCountingSince() {
+        return jdbc.queryForObject("SELECT DATE_FORMAT(MIN(day), '%Y-%m-%d') FROM usage_daily", new MapSqlParameterSource(), String.class);
+    }
+
     // ---- snapshot ------------------------------------------------------------------------------------------
 
     public long[] accountTotals() {

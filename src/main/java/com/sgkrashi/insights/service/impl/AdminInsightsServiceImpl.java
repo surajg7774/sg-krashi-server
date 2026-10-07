@@ -7,6 +7,7 @@ import com.sgkrashi.insights.dto.response.InsightsResponses.FulfilmentResponse;
 import com.sgkrashi.insights.dto.response.InsightsResponses.OrdersResponse;
 import com.sgkrashi.insights.dto.response.InsightsResponses.SignupsResponse;
 import com.sgkrashi.insights.dto.response.InsightsResponses.SnapshotResponse;
+import com.sgkrashi.insights.dto.response.InsightsResponses.UsageResponse;
 import com.sgkrashi.insights.repository.InsightsQueryRepository;
 import com.sgkrashi.insights.repository.InsightsQueryRepository.BookingRow;
 import com.sgkrashi.insights.repository.InsightsQueryRepository.ChatRow;
@@ -17,6 +18,7 @@ import com.sgkrashi.insights.repository.InsightsQueryRepository.RepeatRow;
 import com.sgkrashi.insights.repository.InsightsQueryRepository.SignupRow;
 import com.sgkrashi.insights.service.AdminInsightsService;
 import com.sgkrashi.insights.util.Granularity;
+import com.sgkrashi.usage.UsageFeature;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -182,6 +184,37 @@ public class AdminInsightsServiceImpl implements AdminInsightsService {
         ActivityResponse.ActiveNow now = new ActivityResponse.ActiveNow(
                 repository.activeUsersBetween(today.minusDays(6), today), repository.activeUsersBetween(today.minusDays(29), today));
         return new ActivityResponse(g.label(), activePoints, chatPoints, scanPoints, now);
+    }
+
+    // ---- feature usage -------------------------------------------------------------------------------------
+
+    @Override
+    public UsageResponse usage(LocalDate from, LocalDate to, Granularity g) {
+        validate(from, to);
+        String since = repository.usageCountingSince();
+        Map<String, Long> totals = new java.util.LinkedHashMap<>();
+        for (UsageFeature f : UsageFeature.values()) totals.put(f.key(), 0L);
+        if (since == null) return new UsageResponse(g.label(), null, List.of(), totals);
+
+        Map<String, Map<String, Long>> byBucket = new HashMap<>();
+        for (InsightsQueryRepository.UsageRow row : repository.usage(g, from, to)) {
+            byBucket.computeIfAbsent(row.bucket(), k -> new HashMap<>()).merge(row.feature(), row.count(), Long::sum);
+        }
+        // Days before counting started are not zeros, they are unknown, so those buckets are left out.
+        LocalDate firstBucket = g.bucketStart(LocalDate.parse(since));
+        List<UsageResponse.UsagePoint> points = new ArrayList<>();
+        for (LocalDate b : g.bucketsBetween(from, to)) {
+            if (b.isBefore(firstBucket)) continue;
+            Map<String, Long> counts = new java.util.LinkedHashMap<>();
+            Map<String, Long> row = byBucket.getOrDefault(b.toString(), Map.of());
+            for (UsageFeature f : UsageFeature.values()) {
+                long n = row.getOrDefault(f.key(), 0L);
+                counts.put(f.key(), n);
+                totals.merge(f.key(), n, Long::sum);
+            }
+            points.add(new UsageResponse.UsagePoint(b.toString(), counts));
+        }
+        return new UsageResponse(g.label(), since, points, totals);
     }
 
     // ---- snapshot ------------------------------------------------------------------------------------------

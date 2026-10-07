@@ -6,6 +6,7 @@ import com.sgkrashi.insights.dto.response.InsightsResponses.FulfilmentResponse;
 import com.sgkrashi.insights.dto.response.InsightsResponses.OrdersResponse;
 import com.sgkrashi.insights.dto.response.InsightsResponses.SignupsResponse;
 import com.sgkrashi.insights.dto.response.InsightsResponses.SnapshotResponse;
+import com.sgkrashi.insights.dto.response.InsightsResponses.UsageResponse;
 import com.sgkrashi.insights.util.Granularity;
 
 import java.time.LocalDate;
@@ -22,6 +23,8 @@ public interface AdminInsightsService {
     BookingsResponse bookings(LocalDate from, LocalDate to, Granularity groupBy);
 
     ActivityResponse activity(LocalDate from, LocalDate to, Granularity groupBy);
+
+    UsageResponse usage(LocalDate from, LocalDate to, Granularity groupBy);
 
     SnapshotResponse snapshot();
 }

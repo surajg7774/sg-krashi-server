@@ -2,6 +2,7 @@ package com.sgkrashi.insights.dto.response;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Response shapes for the admin Insights page. Every number here is a count or
@@ -76,6 +77,17 @@ public final class InsightsResponses {
 
         /** Distinct logged-in people who started or renewed a session in the last 7 and 30 India-time days (today included). */
         public record ActiveNow(long last7Days, long last30Days) {
+        }
+    }
+
+    /**
+     * Anonymous daily feature counters (usage_daily). {@code countingSince} is the first day any count was
+     * written (null if none yet); buckets before it are left out, since nothing was being counted then. Each
+     * point maps every feature key to its count for that bucket (0 when unused). Counts are requests answered
+     * by the server, not people, and may be up to a minute behind.
+     */
+    public record UsageResponse(String groupBy, String countingSince, List<UsagePoint> points, Map<String, Long> totals) {
+        public record UsagePoint(String bucket, Map<String, Long> counts) {
         }
     }
 
