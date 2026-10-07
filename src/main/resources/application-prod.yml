@@ -144,9 +144,24 @@ server:
   # original request was HTTPS — which matters here specifically because the
   # refresh-token cookie is Secure(true) (Module 2) and Spring Security's
   # redirect/URL-building logic also assumes the scheme it sees is the real
-  # one. "framework" delegates to Spring's own ForwardedHeaderFilter, reading
-  # the standard X-Forwarded-Proto/X-Forwarded-Host headers.
-  forward-headers-strategy: framework
+  # one.
+  #
+  # "native" (Tomcat's RemoteIpValve) rather than "framework" (Spring's ForwardedHeaderFilter),
+  # because the rate limiters need the real client IP and the two differ on a forged
+  # X-Forwarded-For: the framework filter believes the LEFT-most address, which a client can
+  # set to anything, while the valve only trusts the header when the connecting peer is one of
+  # the internal proxies below and then walks it from the RIGHT, skipping trusted proxies, so
+  # addresses a client puts at the front are ignored. It still handles X-Forwarded-Proto
+  # (https) and X-Forwarded-Host. Covered by ClientIpResolutionTest, which loads this file.
+  forward-headers-strategy: native
+  tomcat:
+    remoteip:
+      remote-ip-header: X-Forwarded-For
+      protocol-header: X-Forwarded-Proto
+      # Spring Boot's default internal ranges (10/8, 172.16/12, 192.168/16, 169.254/16, 127/8,
+      # 100.64/10, ::1) plus IPv6 unique-local fc00::/7: Railway's edge reaches the service from
+      # an fdXX:... address on its private network (seen in the service's network flow logs).
+      internal-proxies: '10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|169\.254\.\d{1,3}\.\d{1,3}|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.1[6-9]\.\d{1,3}\.\d{1,3}|172\.2\d\.\d{1,3}\.\d{1,3}|172\.3[01]\.\d{1,3}\.\d{1,3}|100\.6[4-9]\.\d{1,3}\.\d{1,3}|100\.[7-9]\d\.\d{1,3}\.\d{1,3}|100\.1[01]\d\.\d{1,3}\.\d{1,3}|100\.12[0-7]\.\d{1,3}\.\d{1,3}|0:0:0:0:0:0:0:1|::1|[fF][cdCD][0-9a-fA-F]{2}:[0-9a-fA-F:]+'
 
 # The API docs list every endpoint (including all /admin ones) and need no login, so
 # they are switched off in production. Dev/local/test keep them (base application.yml).

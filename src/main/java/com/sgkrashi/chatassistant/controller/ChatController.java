@@ -5,6 +5,7 @@ import com.sgkrashi.chatassistant.dto.response.ChatMessageResponse;
 import com.sgkrashi.chatassistant.dto.response.ChatSessionResponse;
 import com.sgkrashi.chatassistant.service.ChatService;
 import com.sgkrashi.common.dto.ApiResponse;
+import com.sgkrashi.common.web.ClientIpResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -30,9 +31,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class ChatController {
 
     private final ChatService chatService;
+    private final ClientIpResolver clientIpResolver;
 
-    public ChatController(ChatService chatService) {
+    public ChatController(ChatService chatService, ClientIpResolver clientIpResolver) {
         this.chatService = chatService;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @PostMapping
@@ -50,7 +53,7 @@ public class ChatController {
         // Only actually used for Guest requests (see ChatServiceImpl) — an
         // authenticated request's rate-limit key comes from the JWT
         // principal instead, same as AI Crop Doctor's /analyze.
-        ChatMessageResponse response = chatService.sendMessage(id, request.message(), httpRequest.getRemoteAddr());
+        ChatMessageResponse response = chatService.sendMessage(id, request.message(), clientIpResolver.resolve(httpRequest));
         return ResponseEntity.ok(ApiResponse.success(response, "Message sent"));
     }
 

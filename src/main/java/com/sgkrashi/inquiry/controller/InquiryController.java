@@ -3,6 +3,7 @@ package com.sgkrashi.inquiry.controller;
 import com.sgkrashi.common.dto.ApiResponse;
 import com.sgkrashi.common.dto.PaginatedResponse;
 import com.sgkrashi.common.exception.RateLimitExceededException;
+import com.sgkrashi.common.web.ClientIpResolver;
 import com.sgkrashi.inquiry.dto.request.CreateInquiryRequest;
 import com.sgkrashi.inquiry.dto.response.InquiryResponse;
 import com.sgkrashi.inquiry.ratelimit.InquiryRateLimiter;
@@ -30,10 +31,16 @@ public class InquiryController {
 
     private final InquiryService inquiryService;
     private final InquiryRateLimiter inquiryRateLimiter;
+    private final ClientIpResolver clientIpResolver;
 
-    public InquiryController(InquiryService inquiryService, InquiryRateLimiter inquiryRateLimiter) {
+    public InquiryController(
+            InquiryService inquiryService,
+            InquiryRateLimiter inquiryRateLimiter,
+            ClientIpResolver clientIpResolver
+    ) {
         this.inquiryService = inquiryService;
         this.inquiryRateLimiter = inquiryRateLimiter;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @PostMapping
@@ -41,7 +48,7 @@ public class InquiryController {
             @Valid @RequestBody CreateInquiryRequest request,
             HttpServletRequest servletRequest
     ) {
-        if (!inquiryRateLimiter.tryConsume(servletRequest.getRemoteAddr())) {
+        if (!inquiryRateLimiter.tryConsume(clientIpResolver.resolve(servletRequest))) {
             throw new RateLimitExceededException("Too many submissions. Please try again in a few minutes.");
         }
 

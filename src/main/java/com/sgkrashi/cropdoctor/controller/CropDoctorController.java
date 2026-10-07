@@ -1,6 +1,7 @@
 package com.sgkrashi.cropdoctor.controller;
 
 import com.sgkrashi.common.dto.ApiResponse;
+import com.sgkrashi.common.web.ClientIpResolver;
 import com.sgkrashi.common.dto.PaginatedResponse;
 import com.sgkrashi.cropdoctor.dto.response.CropScanReport;
 import com.sgkrashi.cropdoctor.dto.response.CropScanResponse;
@@ -29,9 +30,11 @@ import java.util.List;
 public class CropDoctorController {
 
     private final CropDoctorService cropDoctorService;
+    private final ClientIpResolver clientIpResolver;
 
-    public CropDoctorController(CropDoctorService cropDoctorService) {
+    public CropDoctorController(CropDoctorService cropDoctorService, ClientIpResolver clientIpResolver) {
         this.cropDoctorService = cropDoctorService;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @PostMapping(value = "/analyze", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -44,7 +47,7 @@ public class CropDoctorController {
         // Only actually used for Guest requests (see CropDoctorServiceImpl) —
         // an authenticated request's rate-limit key comes from the JWT
         // principal instead, same as every other ownership-scoped endpoint.
-        CropScanResponse response = cropDoctorService.analyze(files, declaredCrop, language, request.getRemoteAddr());
+        CropScanResponse response = cropDoctorService.analyze(files, declaredCrop, language, clientIpResolver.resolve(request));
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response, "Scan complete"));
     }
 

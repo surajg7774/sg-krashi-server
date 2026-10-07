@@ -35,7 +35,7 @@ class ClientErrorHandlingTest {
     private final CropDoctorService cropDoctorService = mock(CropDoctorService.class);
 
     private final MockMvc mvc = MockMvcBuilders
-            .standaloneSetup(new CropDoctorController(cropDoctorService), new TypedProbeController())
+            .standaloneSetup(new CropDoctorController(cropDoctorService, new com.sgkrashi.common.web.ClientIpResolver(true)), new TypedProbeController())
             .setControllerAdvice(new GlobalExceptionHandler())
             // Spring's own ObjectMapper builder registers the java.time module the error body's Instant needs.
             .setMessageConverters(new MappingJackson2HttpMessageConverter(Jackson2ObjectMapperBuilder.json().build()))

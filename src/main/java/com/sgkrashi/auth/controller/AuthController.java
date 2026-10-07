@@ -8,11 +8,12 @@ import com.sgkrashi.auth.dto.request.ResendOtpRequest;
 import com.sgkrashi.auth.dto.request.ResetPasswordRequest;
 import com.sgkrashi.auth.dto.request.VerifyOtpRequest;
 import com.sgkrashi.auth.dto.response.AuthResponse;
+import com.sgkrashi.auth.ratelimit.AuthRateLimiters;
 import com.sgkrashi.auth.ratelimit.LoginRateLimiter;
 import com.sgkrashi.auth.service.AuthResult;
 import com.sgkrashi.auth.service.AuthService;
 import com.sgkrashi.common.dto.ApiResponse;
-import com.sgkrashi.common.exception.RateLimitExceededException;
+import com.sgkrashi.common.web.ClientIpResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -42,10 +43,19 @@ public class AuthController {
 
     private final AuthService authService;
     private final LoginRateLimiter loginRateLimiter;
+    private final AuthRateLimiters authRateLimiters;
+    private final ClientIpResolver clientIpResolver;
 
-    public AuthController(AuthService authService, LoginRateLimiter loginRateLimiter) {
+    public AuthController(
+            AuthService authService,
+            LoginRateLimiter loginRateLimiter,
+            AuthRateLimiters authRateLimiters,
+            ClientIpResolver clientIpResolver
+    ) {
         this.authService = authService;
         this.loginRateLimiter = loginRateLimiter;
+        this.authRateLimiters = authRateLimiters;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @PostMapping("/register")
@@ -53,7 +63,7 @@ public class AuthController {
             @Valid @RequestBody RegisterRequest request,
             HttpServletRequest servletRequest
     ) {
-        enforceRateLimit(servletRequest);
+        authRateLimiters.checkRegister(clientIpResolver.resolve(servletRequest));
         authService.register(request);
         return ResponseEntity.ok(ApiResponse.success(
                 null, "A verification code has been sent to your email"));
@@ -62,8 +72,10 @@ public class AuthController {
     @PostMapping("/verify-otp")
     public ResponseEntity<ApiResponse<AuthResponse>> verifyOtp(
             @Valid @RequestBody VerifyOtpRequest request,
+            HttpServletRequest servletRequest,
             HttpServletResponse servletResponse
     ) {
+        authRateLimiters.checkVerifyOtp(clientIpResolver.resolve(servletRequest));
         AuthResult result = authService.verifyOtp(request);
         setRefreshCookie(servletResponse, result.rawRefreshToken());
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -71,7 +83,11 @@ public class AuthController {
     }
 
     @PostMapping("/resend-otp")
-    public ResponseEntity<ApiResponse<Void>> resendOtp(@Valid @RequestBody ResendOtpRequest request) {
+    public ResponseEntity<ApiResponse<Void>> resendOtp(
+            @Valid @RequestBody ResendOtpRequest request,
+            HttpServletRequest servletRequest
+    ) {
+        authRateLimiters.checkResendOtp(clientIpResolver.resolve(servletRequest), request.email());
         authService.resendOtp(request);
         return ResponseEntity.ok(ApiResponse.success(null, "A new verification code has been sent"));
     }
@@ -79,8 +95,10 @@ public class AuthController {
     @PostMapping("/google")
     public ResponseEntity<ApiResponse<AuthResponse>> google(
             @Valid @RequestBody GoogleAuthRequest request,
+            HttpServletRequest servletRequest,
             HttpServletResponse servletResponse
     ) {
+        authRateLimiters.checkGoogle(clientIpResolver.resolve(servletRequest));
         AuthResult result = authService.loginWithGoogle(request.idToken());
         setRefreshCookie(servletResponse, result.rawRefreshToken());
         return ResponseEntity.ok(ApiResponse.success(result.response(), "Login successful"));
@@ -92,7 +110,7 @@ public class AuthController {
             HttpServletRequest servletRequest,
             HttpServletResponse servletResponse
     ) {
-        enforceRateLimit(servletRequest);
+        loginRateLimiter.enforce(clientIpResolver.resolve(servletRequest));
         AuthResult result = authService.login(request);
         setRefreshCookie(servletResponse, result.rawRefreshToken());
         return ResponseEntity.ok(ApiResponse.success(result.response(), "Login successful"));
@@ -119,24 +137,26 @@ public class AuthController {
     }
 
     @PostMapping("/forgot-password")
-    public ResponseEntity<ApiResponse<Void>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+    public ResponseEntity<ApiResponse<Void>> forgotPassword(
+            @Valid @RequestBody ForgotPasswordRequest request,
+            HttpServletRequest servletRequest
+    ) {
+        authRateLimiters.checkForgotPassword(clientIpResolver.resolve(servletRequest), request.email());
         authService.forgotPassword(request);
         return ResponseEntity.ok(ApiResponse.success(
                 null, "If an account exists for that email, a reset link has been sent"));
     }
 
     @PostMapping("/reset-password")
-    public ResponseEntity<ApiResponse<Void>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+    public ResponseEntity<ApiResponse<Void>> resetPassword(
+            @Valid @RequestBody ResetPasswordRequest request,
+            HttpServletRequest servletRequest
+    ) {
+        authRateLimiters.checkResetPassword(clientIpResolver.resolve(servletRequest));
         authService.resetPassword(request);
         return ResponseEntity.ok(ApiResponse.success(null, "Password has been reset successfully"));
     }
 
-    private void enforceRateLimit(HttpServletRequest request) {
-        String clientKey = request.getRemoteAddr();
-        if (!loginRateLimiter.tryConsume(clientKey)) {
-            throw new RateLimitExceededException("Too many attempts. Please try again in a few minutes.");
-        }
-    }
 
     /**
      * {@code SameSite=None} (not {@code Strict} or the default {@code Lax}) is

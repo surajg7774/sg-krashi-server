@@ -6,11 +6,12 @@ import com.sgkrashi.auth.dto.request.RefreshTokenRequest;
 import com.sgkrashi.auth.dto.request.VerifyOtpRequest;
 import com.sgkrashi.auth.dto.response.MobileAuthResponse;
 import com.sgkrashi.auth.dto.response.MobileRefreshResponse;
+import com.sgkrashi.auth.ratelimit.AuthRateLimiters;
 import com.sgkrashi.auth.ratelimit.LoginRateLimiter;
 import com.sgkrashi.auth.service.AuthResult;
 import com.sgkrashi.auth.service.AuthService;
 import com.sgkrashi.common.dto.ApiResponse;
-import com.sgkrashi.common.exception.RateLimitExceededException;
+import com.sgkrashi.common.web.ClientIpResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -44,10 +45,19 @@ public class MobileAuthController {
 
     private final AuthService authService;
     private final LoginRateLimiter loginRateLimiter;
+    private final AuthRateLimiters authRateLimiters;
+    private final ClientIpResolver clientIpResolver;
 
-    public MobileAuthController(AuthService authService, LoginRateLimiter loginRateLimiter) {
+    public MobileAuthController(
+            AuthService authService,
+            LoginRateLimiter loginRateLimiter,
+            AuthRateLimiters authRateLimiters,
+            ClientIpResolver clientIpResolver
+    ) {
         this.authService = authService;
         this.loginRateLimiter = loginRateLimiter;
+        this.authRateLimiters = authRateLimiters;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @PostMapping("/login")
@@ -55,55 +65,55 @@ public class MobileAuthController {
             @Valid @RequestBody LoginRequest request,
             HttpServletRequest servletRequest
     ) {
-        enforceRateLimit(servletRequest);
+        loginRateLimiter.enforce(clientIpResolver.resolve(servletRequest));
         AuthResult result = authService.login(request);
         MobileAuthResponse body = new MobileAuthResponse(
                 result.response().accessToken(), result.rawRefreshToken(), result.response().user());
         return ResponseEntity.ok(ApiResponse.success(body, "Login successful"));
     }
 
-    // No rate limiting here either — LoginRateLimiter exists specifically to
-    // slow down password-guessing, which doesn't apply to a Google ID token
-    // (nothing to "guess"; an invalid one just fails verification, same as
-    // any malformed credential elsewhere in this app).
+    // Not covered by LoginRateLimiter (that one slows password guessing, and there is nothing to
+    // guess in a Google ID token), but still capped per client IP by AuthRateLimiters so one
+    // address cannot make the server verify tokens against Google without limit.
     @PostMapping("/google")
-    public ResponseEntity<ApiResponse<MobileAuthResponse>> google(@Valid @RequestBody GoogleAuthRequest request) {
+    public ResponseEntity<ApiResponse<MobileAuthResponse>> google(
+            @Valid @RequestBody GoogleAuthRequest request,
+            HttpServletRequest servletRequest
+    ) {
+        authRateLimiters.checkGoogle(clientIpResolver.resolve(servletRequest));
         AuthResult result = authService.loginWithGoogle(request.idToken());
         MobileAuthResponse body = new MobileAuthResponse(
                 result.response().accessToken(), result.rawRefreshToken(), result.response().user());
         return ResponseEntity.ok(ApiResponse.success(body, "Login successful"));
     }
 
-    // No rate limiting — same reasoning as google() above: nothing to guess,
-    // and TooManyOtpAttemptsException already bounds wrong-code attempts on
-    // the OTP itself, which is the actual brute-force surface here.
+    // TooManyOtpAttemptsException bounds wrong-code attempts on the OTP itself, which is the
+    // actual brute-force surface here; the per-IP cap in AuthRateLimiters stops one address
+    // from walking through many pending registrations.
     @PostMapping("/verify-otp")
-    public ResponseEntity<ApiResponse<MobileAuthResponse>> verifyOtp(@Valid @RequestBody VerifyOtpRequest request) {
+    public ResponseEntity<ApiResponse<MobileAuthResponse>> verifyOtp(
+            @Valid @RequestBody VerifyOtpRequest request,
+            HttpServletRequest servletRequest
+    ) {
+        authRateLimiters.checkVerifyOtp(clientIpResolver.resolve(servletRequest));
         AuthResult result = authService.verifyOtp(request);
         MobileAuthResponse body = new MobileAuthResponse(
                 result.response().accessToken(), result.rawRefreshToken(), result.response().user());
         return ResponseEntity.ok(ApiResponse.success(body, "Account verified and created successfully"));
     }
 
-    // No rate limiting here, matching AuthController.refresh(), which has
-    // none either — only register()/login() are rate-limited on that
-    // controller, so this stays at parity rather than inventing a stricter
-    // rule the web path doesn't have.
+    // Capped per client IP by AuthRateLimiters (generous: a refresh is normally one call per user
+    // every few minutes, and many users share one carrier-NAT address). The web refresh, which runs
+    // on every page load for every visitor, is deliberately left unlimited.
     @PostMapping("/refresh")
-    public ResponseEntity<ApiResponse<MobileRefreshResponse>> refresh(@Valid @RequestBody RefreshTokenRequest request) {
+    public ResponseEntity<ApiResponse<MobileRefreshResponse>> refresh(
+            @Valid @RequestBody RefreshTokenRequest request,
+            HttpServletRequest servletRequest
+    ) {
+        authRateLimiters.checkRefresh(clientIpResolver.resolve(servletRequest));
         AuthResult result = authService.refresh(request.refreshToken());
         MobileRefreshResponse body = new MobileRefreshResponse(result.response().accessToken(), result.rawRefreshToken());
         return ResponseEntity.ok(ApiResponse.success(body, "Session refreshed"));
     }
 
-    // Identical to AuthController's own private helper — duplicated rather
-    // than extracted, since sharing it would mean introducing a base class or
-    // a new shared component just for a three-line method used by two
-    // controllers total.
-    private void enforceRateLimit(HttpServletRequest request) {
-        String clientKey = request.getRemoteAddr();
-        if (!loginRateLimiter.tryConsume(clientKey)) {
-            throw new RateLimitExceededException("Too many attempts. Please try again in a few minutes.");
-        }
-    }
 }

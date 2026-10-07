@@ -17,6 +17,7 @@ import com.sgkrashi.weather.client.GeocodingUnavailableException;
 import com.sgkrashi.weather.exception.WeatherDataUnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -103,7 +104,11 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleRateLimitExceeded(RateLimitExceededException ex) {
         log.warn("Rate limit exceeded: {}", ex.getMessage());
         ApiErrorResponse body = ApiErrorResponse.of("RATE_LIMIT_EXCEEDED", ex.getMessage(), List.of());
-        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(body);
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS);
+        if (ex.getRetryAfterSeconds() != null) {
+            response.header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfterSeconds()));
+        }
+        return response.body(body);
     }
 
     @ExceptionHandler(AiQuotaExceededException.class)
