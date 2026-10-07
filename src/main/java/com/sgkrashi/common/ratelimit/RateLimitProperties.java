@@ -13,6 +13,11 @@ import java.time.Duration;
  * <p>The defaults are deliberately generous for the per-IP limits, because many real users share
  * one IP behind a mobile carrier's NAT; the per-email limits are the ones that stop one victim's
  * inbox being flooded. {@code login} keeps its original 5 attempts per 15 minutes.
+ *
+ * <p>The {@code *Global} rules are one shared allowance for ALL callers together on the endpoints that
+ * send email or can be hammered: they are the backstop that still bounds email volume (and the Brevo quota)
+ * if the per-IP key is ever forged. Their keys cannot be chosen by a caller, so they cannot be dodged;
+ * the price is that a flood can use the shared allowance up for a while and make other callers wait.
  */
 @ConfigurationProperties(prefix = "app.rate-limit")
 public record RateLimitProperties(
@@ -25,7 +30,11 @@ public record RateLimitProperties(
         @DefaultValue Rule resendOtpEmail,
         @DefaultValue Rule verifyOtp,
         @DefaultValue Rule google,
-        @DefaultValue Rule refresh
+        @DefaultValue Rule refresh,
+        @DefaultValue Rule registerGlobal,
+        @DefaultValue Rule forgotPasswordGlobal,
+        @DefaultValue Rule resendOtpGlobal,
+        @DefaultValue Rule resetPasswordGlobal
 ) {
 
     /** One limit: {@code max} requests per {@code window}. */
@@ -78,5 +87,21 @@ public record RateLimitProperties(
 
     public Rule refresh() {
         return orDefault(refresh, 300, Duration.ofMinutes(15));
+    }
+
+    public Rule registerGlobal() {
+        return orDefault(registerGlobal, 100, Duration.ofMinutes(15));
+    }
+
+    public Rule forgotPasswordGlobal() {
+        return orDefault(forgotPasswordGlobal, 60, Duration.ofMinutes(15));
+    }
+
+    public Rule resendOtpGlobal() {
+        return orDefault(resendOtpGlobal, 100, Duration.ofMinutes(15));
+    }
+
+    public Rule resetPasswordGlobal() {
+        return orDefault(resetPasswordGlobal, 60, Duration.ofMinutes(15));
     }
 }

@@ -146,13 +146,13 @@ server:
   # redirect/URL-building logic also assumes the scheme it sees is the real
   # one.
   #
-  # "native" (Tomcat's RemoteIpValve) rather than "framework" (Spring's ForwardedHeaderFilter),
-  # because the rate limiters need the real client IP and the two differ on a forged
-  # X-Forwarded-For: the framework filter believes the LEFT-most address, which a client can
-  # set to anything, while the valve only trusts the header when the connecting peer is one of
-  # the internal proxies below and then walks it from the RIGHT, skipping trusted proxies, so
-  # addresses a client puts at the front are ignored. It still handles X-Forwarded-Proto
-  # (https) and X-Forwarded-Host. Covered by ClientIpResolutionTest, which loads this file.
+  # "native" (Tomcat's RemoteIpValve) rather than "framework" (Spring's ForwardedHeaderFilter): it
+  # handles X-Forwarded-Proto (https) and X-Forwarded-Host, and for X-Forwarded-For it only believes
+  # the header when the connecting peer is one of the internal proxies below, walking it from the
+  # right. NOTE: Railway's edge does not append the real client address to a client-supplied
+  # X-Forwarded-For (measured on the live service), so that header can be forged. The rate limiters
+  # therefore take the client IP from X-Real-IP, which Railway sets (see ClientIpResolver), and treat
+  # this valve only as a fallback. Covered by ClientIpResolutionTest, which loads this file.
   forward-headers-strategy: native
   tomcat:
     remoteip:

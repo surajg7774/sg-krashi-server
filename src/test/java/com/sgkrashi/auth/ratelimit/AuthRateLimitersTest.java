@@ -49,7 +49,7 @@ class AuthRateLimitersTest {
     private static RateLimitProperties bind(Map<String, String> values) {
         return new Binder(new MapConfigurationPropertySource(values))
                 .bind("app.rate-limit", RateLimitProperties.class)
-                .orElseGet(() -> new RateLimitProperties(null, null, null, null, null, null, null, null, null, null));
+                .orElseGet(() -> new RateLimitProperties(null, null, null, null, null, null, null, null, null, null, null, null, null, null));
     }
 
     private AuthRateLimiters limiters(Map<String, String> values) {
@@ -80,6 +80,12 @@ class AuthRateLimitersTest {
         assertEquals(60, defaults.google().max());
         assertEquals(300, defaults.refresh().max());
         assertEquals(Duration.ofMinutes(15), defaults.refresh().window());
+        // Global backstops: one shared allowance for all callers together, per 15 minutes.
+        assertEquals(100, defaults.registerGlobal().max());
+        assertEquals(60, defaults.forgotPasswordGlobal().max());
+        assertEquals(100, defaults.resendOtpGlobal().max());
+        assertEquals(60, defaults.resetPasswordGlobal().max());
+        assertEquals(Duration.ofMinutes(15), defaults.forgotPasswordGlobal().window());
     }
 
     @Test
@@ -203,6 +209,86 @@ class AuthRateLimitersTest {
         assertThrows(RateLimitExceededException.class, () -> auth.checkResetPassword("203.0.113.7"));
         clock.advance(Duration.ofMinutes(16));
         assertDoesNotThrow(() -> auth.checkResetPassword("203.0.113.7"));
+    }
+
+    // ------------------------------------------------------------------ global backstop
+
+    @Test
+    void theGlobalCapStopsForgotPasswordAcrossAllAddressesAndEmails() {
+        AuthRateLimiters auth = limiters(Map.of());
+        // 60 requests, every one from a different address and for a different email: no per-IP or per-email limit applies.
+        for (int i = 0; i < 60; i++) {
+            auth.checkForgotPassword("198.51." + (i / 250) + "." + (i % 250 + 1), "user" + i + "@example.test");
+        }
+        RateLimitExceededException ex = assertThrows(RateLimitExceededException.class,
+                () -> auth.checkForgotPassword("203.0.113.250", "one-more@example.test"));
+        assertNotNull(ex.getRetryAfterSeconds());
+        assertTrue(ex.getRetryAfterSeconds() > 0 && ex.getRetryAfterSeconds() <= 15 * 60);
+        // ...and it clears when the window passes.
+        clock.advance(Duration.ofMinutes(16));
+        assertDoesNotThrow(() -> auth.checkForgotPassword("203.0.113.250", "one-more@example.test"));
+    }
+
+    @Test
+    void everyEmailSendingOrTokenEndpointHasItsOwnGlobalCap() {
+        AuthRateLimiters auth = limiters(Map.of());
+        for (int i = 0; i < 100; i++) {
+            String address = "198.51.100." + (i % 250 + 1);
+            auth.checkRegister(address + "-r" + i);
+            auth.checkResendOtp(address + "-o" + i, "p" + i + "@example.test");
+        }
+        assertThrows(RateLimitExceededException.class, () -> auth.checkRegister("x"));
+        assertThrows(RateLimitExceededException.class, () -> auth.checkResendOtp("y", "q@example.test"));
+
+        for (int i = 0; i < 60; i++) {
+            auth.checkResetPassword("203.0.113." + (i % 250 + 1) + "-" + i);
+        }
+        assertThrows(RateLimitExceededException.class, () -> auth.checkResetPassword("z"));
+    }
+
+    @Test
+    void theGlobalCapsAreIndependentOfEachOther() {
+        AuthRateLimiters auth = limiters(Map.of());
+        for (int i = 0; i < 60; i++) {
+            auth.checkForgotPassword("203.0.113." + i, "u" + i + "@example.test");
+        }
+        assertThrows(RateLimitExceededException.class, () -> auth.checkForgotPassword("203.0.113.200", "v@example.test"));
+        // Using up forgot-password's shared allowance does not touch the others.
+        assertDoesNotThrow(() -> auth.checkResetPassword("203.0.113.201"));
+        assertDoesNotThrow(() -> auth.checkResendOtp("203.0.113.202", "w@example.test"));
+        assertDoesNotThrow(() -> auth.checkRegister("203.0.113.203"));
+    }
+
+    @Test
+    void aBlockedByIpOrEmailRequestDoesNotUseUpTheGlobalAllowance() {
+        AuthRateLimiters auth = limiters(Map.of("app.rate-limit.forgot-password-ip.max", "1", "app.rate-limit.forgot-password-ip.window", "1h"));
+        auth.checkForgotPassword("203.0.113.7", "a@example.test");
+        for (int i = 0; i < 500; i++) {
+            assertThrows(RateLimitExceededException.class, () -> auth.checkForgotPassword("203.0.113.7", "b@example.test"));
+        }
+        // 59 more distinct callers still fit in the global allowance of 60 (one used above).
+        for (int i = 0; i < 59; i++) {
+            auth.checkForgotPassword("198.51.100." + (i + 1), "c" + i + "@example.test");
+        }
+    }
+
+    @Test
+    void normalBusyUseNeverComesNearTheGlobalCaps() {
+        // A busy quarter of an hour for a small platform: 25 forgot-password, 30 OTP resends, 40 sign-ups, 15 resets,
+        // each from a different person. All fit well inside 60 / 100 / 100 / 60.
+        AuthRateLimiters auth = limiters(Map.of());
+        for (int i = 0; i < 25; i++) {
+            auth.checkForgotPassword("100.200.3." + i, "forgot" + i + "@example.test");
+        }
+        for (int i = 0; i < 30; i++) {
+            auth.checkResendOtp("100.200.4." + i, "otp" + i + "@example.test");
+        }
+        for (int i = 0; i < 40; i++) {
+            auth.checkRegister("100.200.5." + i);
+        }
+        for (int i = 0; i < 15; i++) {
+            auth.checkResetPassword("100.200.6." + i);
+        }
     }
 
     @Test

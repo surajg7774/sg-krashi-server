@@ -10,18 +10,24 @@ import java.net.UnknownHostException;
 import java.util.Locale;
 
 /**
- * The key to rate-limit a caller by: their IP address, resolved so that a client cannot choose it.
+ * The key to rate-limit a caller by: their IP address.
  *
- * <p>The application sits behind Railway's edge proxy, and the production profile hands
- * {@code X-Forwarded-For} processing to Tomcat's RemoteIpValve ({@code server.forward-headers-strategy:
- * native}). The valve only believes that header when the connecting peer is one of the configured
- * internal proxies, and then walks it from the RIGHT, skipping trusted proxy addresses, so extra
- * addresses a client puts at the front of the header are ignored. After it has run,
- * {@link HttpServletRequest#getRemoteAddr()} is the real client address.
+ * <p>Behind Railway's edge proxy the connection itself comes from the proxy, so the client address has to
+ * come from a header. What the edge does with headers was measured on the live service (Stage 3 spoof
+ * check): a client-supplied {@code X-Forwarded-For} reaches the application unchanged (the edge does NOT
+ * append the real client address to it), so that header can be chosen by the caller and is NOT trusted.
+ * Railway documents {@code X-Real-IP} as the client's remote IP, set by the edge, so it is preferred.
  *
- * <p>If that still leaves an internal address (the edge sent no usable {@code X-Forwarded-For}), every user
- * would otherwise share one key, so the platform's {@code X-Real-IP} header is used as a fallback, and only
- * then. IPv6 addresses are reduced to their /64 prefix, because one subscriber normally owns a whole /64 and
+ * <p>Order:
+ * <ol>
+ *   <li>{@code X-Real-IP}, if it is a plain public IP address;</li>
+ *   <li>otherwise {@link HttpServletRequest#getRemoteAddr()}, which Tomcat's RemoteIpValve has already
+ *       adjusted using {@code X-Forwarded-For} when the connection came from an internal proxy. This is only a
+ *       fallback for a request without a usable {@code X-Real-IP}; on its own it can be forged, which is why
+ *       the sensitive endpoints also have per-email and global caps.</li>
+ * </ol>
+ *
+ * <p>IPv6 addresses are reduced to their /64 prefix, because one subscriber normally owns a whole /64 and
  * could otherwise rotate through addresses to dodge a limit.
  */
 @Component
@@ -29,22 +35,22 @@ public class ClientIpResolver {
 
     static final String REAL_IP_HEADER = "X-Real-IP";
 
-    private final boolean realIpFallback;
+    private final boolean trustRealIpHeader;
 
-    public ClientIpResolver(@Value("${app.client-ip.real-ip-fallback:true}") boolean realIpFallback) {
-        this.realIpFallback = realIpFallback;
+    public ClientIpResolver(@Value("${app.client-ip.trust-x-real-ip:true}") boolean trustRealIpHeader) {
+        this.trustRealIpHeader = trustRealIpHeader;
     }
 
     /** The normalised address to use as a rate-limit key; never null. */
     public String resolve(HttpServletRequest request) {
-        String address = request.getRemoteAddr();
-        InetAddress parsed = parseLiteral(address);
-        if (realIpFallback && (parsed == null || isInternal(parsed))) {
+        if (trustRealIpHeader) {
             InetAddress real = parseLiteral(request.getHeader(REAL_IP_HEADER));
             if (real != null && !isInternal(real)) {
                 return normalise(real);
             }
         }
+        String address = request.getRemoteAddr();
+        InetAddress parsed = parseLiteral(address);
         return parsed != null ? normalise(parsed) : String.valueOf(address);
     }
 

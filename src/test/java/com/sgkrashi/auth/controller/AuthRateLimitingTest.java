@@ -55,7 +55,7 @@ class AuthRateLimitingTest {
     private MockMvc mvcWith(Map<String, String> limitProperties) {
         RateLimitProperties props = new Binder(new MapConfigurationPropertySource(limitProperties))
                 .bind("app.rate-limit", RateLimitProperties.class)
-                .orElseGet(() -> new RateLimitProperties(null, null, null, null, null, null, null, null, null, null));
+                .orElseGet(() -> new RateLimitProperties(null, null, null, null, null, null, null, null, null, null, null, null, null, null));
         LoginRateLimiter login = new LoginRateLimiter(props);
         AuthRateLimiters limiters = new AuthRateLimiters(props);
         ClientIpResolver resolver = new ClientIpResolver(true);

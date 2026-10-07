@@ -39,14 +39,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 /**
- * Proves, against a real embedded Tomcat configured by the real {@code application-prod.yml}, that a
- * client cannot choose the address it is rate-limited under by sending its own {@code X-Forwarded-For}.
- *
- * <p>The test plays the part of Railway's edge: it connects from 127.0.0.1 (one of the configured internal
- * proxies, like the edge's private fdXX:: address) and sends the headers an edge would, including a forged
- * leading X-Forwarded-For entry and the real client address appended on the right.
+ * Against a real embedded Tomcat configured by the real {@code application-prod.yml}, with the test playing
+ * the part of Railway's edge as it was MEASURED on the live service:
+ * <ul>
+ *   <li>it connects from 127.0.0.1 (an internal proxy address, like the edge's private fdXX:: address);</li>
+ *   <li>it sets {@code X-Real-IP} to the real client address;</li>
+ *   <li>it passes a client-supplied {@code X-Forwarded-For} through UNCHANGED: it does not append the real
+ *       client address to it, so that header is whatever the caller wrote.</li>
+ * </ul>
+ * A caller therefore cannot choose its rate-limit key by forging {@code X-Forwarded-For}.
  */
-@SpringBootTest(classes = ClientIpResolutionTest.TestApp.class, webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(classes = ClientIpResolutionTest.TestApp.class, webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        // Keep the global backstop out of the way here; GlobalBackstopTest covers it in its own context.
+        properties = {"app.rate-limit.forgot-password-global.max=100000"})
 @ActiveProfiles("prod")
 class ClientIpResolutionTest {
 
@@ -133,44 +138,32 @@ class ClientIpResolutionTest {
     // ------------------------------------------------------------------ resolution
 
     @Test
-    void theClientAddressTheEdgeAppendedIsUsed() throws Exception {
-        assertEquals("203.0.113.7", whoami("X-Forwarded-For", "203.0.113.7").get("key").asText());
-    }
-
-    @Test
-    void addressesAClientForgesAtTheFrontOfXForwardedForAreIgnored() throws Exception {
-        // The client sent "X-Forwarded-For: 9.9.9.9"; the edge appended the real address after it.
-        assertEquals("203.0.113.7", whoami("X-Forwarded-For", "9.9.9.9, 203.0.113.7").get("key").asText());
-        assertEquals("203.0.113.7", whoami("X-Forwarded-For", "1.1.1.1, 8.8.8.8, 9.9.9.9, 203.0.113.7").get("key").asText());
-        // Forging an internal-looking address does not help either.
-        assertEquals("203.0.113.7", whoami("X-Forwarded-For", "10.0.0.1, 192.168.0.9, 203.0.113.7").get("key").asText());
-    }
-
-    @Test
-    void anInternalHopAfterTheClientIsSkipped() throws Exception {
+    void theClientAddressIsTheEdgeSetXRealIpWhateverXForwardedForSays() throws Exception {
+        // Railway passes a forged X-Forwarded-For through unchanged; the real address arrives in X-Real-IP.
+        assertEquals("203.0.113.7", whoami("X-Real-IP", "203.0.113.7").get("key").asText());
+        assertEquals("203.0.113.7", whoami("X-Real-IP", "203.0.113.7", "X-Forwarded-For", "9.9.9.9").get("key").asText());
         assertEquals("203.0.113.7",
-                whoami("X-Forwarded-For", "9.9.9.9, 203.0.113.7, fd12:3456:789a::5").get("key").asText());
+                whoami("X-Real-IP", "203.0.113.7", "X-Forwarded-For", "1.1.1.1, 8.8.8.8, 10.0.0.1, 192.168.0.9").get("key").asText());
     }
 
     @Test
-    void withNoForwardingHeaderTheKeyIsTheConnectionItselfNotAClientSuppliedValue() throws Exception {
-        JsonNode me = whoami();
-        assertEquals("127.0.0.1", me.get("key").asText());
-        assertEquals("127.0.0.1", me.get("remoteAddr").asText());
+    void anInternalOrJunkXRealIpFallsBackToTheConnectionNotToAClientChosenValue() throws Exception {
+        assertEquals("127.0.0.1", whoami("X-Real-IP", "10.0.0.1").get("key").asText());
+        assertEquals("127.0.0.1", whoami("X-Real-IP", "not-an-ip").get("key").asText());
+        assertEquals("127.0.0.1", whoami().get("key").asText());
     }
 
     @Test
-    void xRealIpIsOnlyAFallbackAndNeverBeatsAResolvedForwardedAddress() throws Exception {
-        assertEquals("203.0.113.7",
-                whoami("X-Forwarded-For", "203.0.113.7", "X-Real-IP", "5.6.7.8").get("key").asText());
-        // No usable X-Forwarded-For at all: the platform's X-Real-IP is used rather than one shared key.
-        assertEquals("5.6.7.8", whoami("X-Real-IP", "5.6.7.8").get("key").asText());
+    void whenXRealIpIsMissingTheForwardedForFallbackIsUsedAndIsKnownToBeForgeable() throws Exception {
+        // Documented weakness, not a goal: with no X-Real-IP the only information left is the (client-controlled)
+        // X-Forwarded-For. That is why the sensitive endpoints also have per-email and global caps.
+        assertEquals("9.9.9.9", whoami("X-Forwarded-For", "9.9.9.9").get("key").asText());
     }
 
     @Test
     void theHttpsSchemeFromXForwardedProtoIsStillHonoured() throws Exception {
         // Spring Security emits the HSTS header only for requests it sees as secure.
-        JsonNode viaEdge = whoami("X-Forwarded-Proto", "https", "X-Forwarded-For", "203.0.113.7");
+        JsonNode viaEdge = whoami("X-Forwarded-Proto", "https", "X-Real-IP", "203.0.113.7");
         assertTrue(viaEdge.get("secure").asBoolean());
         assertEquals("https", viaEdge.get("scheme").asText());
         assertFalse(whoami().get("secure").asBoolean());
@@ -178,7 +171,7 @@ class ClientIpResolutionTest {
 
     @Test
     void theForwardedHostIsStillHonoured() throws Exception {
-        JsonNode viaEdge = whoami("X-Forwarded-Host", "api.example.test", "X-Forwarded-For", "203.0.113.7");
+        JsonNode viaEdge = whoami("X-Forwarded-Host", "api.example.test", "X-Real-IP", "203.0.113.7");
         assertEquals("api.example.test", viaEdge.get("serverName").asText());
     }
 
@@ -188,14 +181,15 @@ class ClientIpResolutionTest {
     void rotatingForgedForwardedForValuesDoesNotBuyAFreshAllowance() throws Exception {
         String realClient = "203.0.113.50";
         // Default: 20 forgot-password requests per client IP per 15 minutes. Each request carries a different
-        // forged leading X-Forwarded-For value and a different email (so the per-email limit is not the one hit).
+        // forged X-Forwarded-For and a different email (so the per-email limit is not the one hit); the edge
+        // supplies the real address in X-Real-IP every time.
         for (int i = 1; i <= 20; i++) {
             HttpResponse<String> ok = forgotPassword("rotating" + i + "@example.test",
-                    "X-Forwarded-For", "7." + i + ".8." + i + ", " + realClient);
+                    "X-Real-IP", realClient, "X-Forwarded-For", "7." + i + ".8." + i);
             assertEquals(200, ok.statusCode(), "request " + i);
         }
         HttpResponse<String> blocked = forgotPassword("rotating21@example.test",
-                "X-Forwarded-For", "99.99.99.99, " + realClient);
+                "X-Real-IP", realClient, "X-Forwarded-For", "99.99.99.99");
         assertEquals(429, blocked.statusCode());
         assertNotNull(blocked.headers().firstValue("Retry-After").orElse(null), "Retry-After header");
         assertTrue(Long.parseLong(blocked.headers().firstValue("Retry-After").get()) > 0);
@@ -204,16 +198,16 @@ class ClientIpResolutionTest {
         assertEquals("RATE_LIMIT_EXCEEDED", body.get("error").get("code").asText());
 
         // A genuinely different client is unaffected.
-        assertEquals(200, forgotPassword("someone-else@example.test", "X-Forwarded-For", "198.51.100.1").statusCode());
+        assertEquals(200, forgotPassword("someone-else@example.test", "X-Real-IP", "198.51.100.1").statusCode());
     }
 
     @Test
     void oneVictimsInboxIsProtectedEvenWhenTheAttackUsesManyAddresses() throws Exception {
         // Default: 5 forgot-password requests per email per hour, whichever address they come from.
         for (int i = 1; i <= 5; i++) {
-            assertEquals(200, forgotPassword("victim@example.test", "X-Forwarded-For", "192.0.2." + i).statusCode(), "request " + i);
+            assertEquals(200, forgotPassword("victim@example.test", "X-Real-IP", "192.0.2." + i).statusCode(), "request " + i);
         }
-        HttpResponse<String> blocked = forgotPassword("Victim@Example.test", "X-Forwarded-For", "192.0.2.200");
+        HttpResponse<String> blocked = forgotPassword("Victim@Example.test", "X-Real-IP", "192.0.2.200");
         assertEquals(429, blocked.statusCode(), "letter case must not give a different allowance");
         assertNotNull(blocked.headers().firstValue("Retry-After").orElse(null));
     }

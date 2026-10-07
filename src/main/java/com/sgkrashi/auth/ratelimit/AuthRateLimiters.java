@@ -16,15 +16,18 @@ import java.util.Locale;
  * {@link LoginRateLimiter}. Each check throws {@link RateLimitExceededException} (HTTP 429 with a
  * {@code Retry-After} header) when exceeded. Numbers come from {@link RateLimitProperties}.
  *
- * <p>The per-IP limits are generous because many real users share one IP behind a carrier's NAT; the
- * per-email limits (forgot password, resend OTP) are what stop one victim's inbox being flooded, even
- * from many different IPs. Trade-off: someone can use up a victim's per-email allowance and so delay
- * that person's own reset email for up to the window.
+ * <p>Three layers, checked in this order: per IP (generous, because many real users share one IP behind
+ * a carrier's NAT), per email (stops one victim's inbox being flooded, even from many IPs), and a GLOBAL
+ * cap per endpoint across all callers. The global cap is the backstop for when the per-IP key can be
+ * forged: it bounds how many emails (and how much of the Brevo quota) these endpoints can cause in total.
+ * Trade-offs: someone can use up a victim's per-email allowance and so delay that person's own reset email
+ * for up to the window, and a large enough flood can use the global allowance up so that everyone waits.
  */
 @Component
 public class AuthRateLimiters {
 
     private static final String MESSAGE = "Too many attempts. Please try again in a few minutes.";
+    private static final String GLOBAL_KEY = "all-callers";
 
     private final FixedWindowRateLimiter register;
     private final FixedWindowRateLimiter forgotPasswordIp;
@@ -35,6 +38,10 @@ public class AuthRateLimiters {
     private final FixedWindowRateLimiter verifyOtp;
     private final FixedWindowRateLimiter google;
     private final FixedWindowRateLimiter refresh;
+    private final FixedWindowRateLimiter registerGlobal;
+    private final FixedWindowRateLimiter forgotPasswordGlobal;
+    private final FixedWindowRateLimiter resendOtpGlobal;
+    private final FixedWindowRateLimiter resetPasswordGlobal;
 
     @Autowired
     public AuthRateLimiters(RateLimitProperties properties) {
@@ -51,6 +58,10 @@ public class AuthRateLimiters {
         this.verifyOtp = limiter(properties.verifyOtp(), clock);
         this.google = limiter(properties.google(), clock);
         this.refresh = limiter(properties.refresh(), clock);
+        this.registerGlobal = limiter(properties.registerGlobal(), clock);
+        this.forgotPasswordGlobal = limiter(properties.forgotPasswordGlobal(), clock);
+        this.resendOtpGlobal = limiter(properties.resendOtpGlobal(), clock);
+        this.resetPasswordGlobal = limiter(properties.resetPasswordGlobal(), clock);
     }
 
     private static FixedWindowRateLimiter limiter(Rule rule, Clock clock) {
@@ -59,20 +70,24 @@ public class AuthRateLimiters {
 
     public void checkRegister(String clientKey) {
         enforce(register, clientKey);
+        enforce(registerGlobal, GLOBAL_KEY);
     }
 
     public void checkForgotPassword(String clientKey, String email) {
         enforce(forgotPasswordIp, clientKey);
         enforce(forgotPasswordEmail, normaliseEmail(email));
+        enforce(forgotPasswordGlobal, GLOBAL_KEY);
     }
 
     public void checkResetPassword(String clientKey) {
         enforce(resetPassword, clientKey);
+        enforce(resetPasswordGlobal, GLOBAL_KEY);
     }
 
     public void checkResendOtp(String clientKey, String email) {
         enforce(resendOtpIp, clientKey);
         enforce(resendOtpEmail, normaliseEmail(email));
+        enforce(resendOtpGlobal, GLOBAL_KEY);
     }
 
     public void checkVerifyOtp(String clientKey) {
