@@ -32,6 +32,13 @@ public final class ProductSpecifications {
                 : cb.equal(root.get("category").get("id"), categoryId);
     }
 
+    /** Dairy: products in any of the given categories; an empty collection matches nothing. */
+    public static Specification<Product> hasCategoryIn(java.util.Collection<Long> categoryIds) {
+        return (root, query, cb) -> categoryIds == null || categoryIds.isEmpty()
+                ? cb.disjunction()
+                : root.get("category").get("id").in(categoryIds);
+    }
+
     public static Specification<Product> priceGreaterThanOrEqual(BigDecimal minPrice) {
         return (root, query, cb) -> minPrice == null
                 ? null

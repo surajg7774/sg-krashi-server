@@ -1,5 +1,6 @@
 package com.sgkrashi.productstore.mapper;
 
+import com.sgkrashi.dairy.dto.DairyDtos.DairyDetailsResponse;
 import com.sgkrashi.media.dto.response.MediaAssetResponse;
 import com.sgkrashi.productstore.dto.response.ProductDetailResponse;
 import com.sgkrashi.productstore.dto.response.ProductSummaryResponse;
@@ -35,6 +36,15 @@ public class ProductMapper {
             List<MediaAssetResponse> media,
             List<ProductSummaryResponse> relatedProducts
     ) {
+        return toDetail(product, media, relatedProducts, null);
+    }
+
+    public ProductDetailResponse toDetail(
+            Product product,
+            List<MediaAssetResponse> media,
+            List<ProductSummaryResponse> relatedProducts,
+            DairyDetailsResponse dairy
+    ) {
         ProductCategory category = product.getCategory();
         ProductDetailResponse.ProductCategorySummary categorySummary = category != null
                 ? new ProductDetailResponse.ProductCategorySummary(category.getId(), category.getName(), category.getSlug())
@@ -54,7 +64,8 @@ public class ProductMapper {
                 product.getAvgRating(),
                 product.getReviewCount(),
                 product.isActive(),
-                product.getCreatedAt()
+                product.getCreatedAt(),
+                dairy
         );
     }
 }

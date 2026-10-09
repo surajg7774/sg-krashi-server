@@ -1,5 +1,7 @@
 package com.sgkrashi.productstore.dto.request;
 
+import com.sgkrashi.dairy.dto.DairyDtos.DairyDetailsRequest;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -37,6 +39,10 @@ public record ProductAdminRequest(
 
         boolean isOrganicCertified,
 
-        boolean isActive
+        boolean isActive,
+
+        /** Dairy facts; only for products in the Dairy category, and optional (omitted = leave as they are). */
+        @Valid
+        DairyDetailsRequest dairy
 ) {
 }

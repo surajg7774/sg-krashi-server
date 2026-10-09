@@ -29,6 +29,9 @@ public interface ProductService {
     /** Module 15 — Admin only. Unlike {@link #listProducts}, does NOT filter by isActive — a deactivated product must stay visible/manageable in its own Admin table, or reactivating it would be impossible through the UI. */
     PaginatedResponse<ProductSummaryResponse> listProductsForAdmin(String search, int page, int size);
 
+    /** Same, optionally narrowed to dairy products ({@code dairyOnly = true}). */
+    PaginatedResponse<ProductSummaryResponse> listProductsForAdmin(String search, boolean dairyOnly, int page, int size);
+
     /** Module 15 — Admin only. Unlike {@link #getProductDetail}, does NOT require the product to be active. */
     ProductDetailResponse getProductForAdmin(Long id);
 }

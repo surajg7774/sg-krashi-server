@@ -69,6 +69,17 @@ public class OrderMapper {
             Map<Long, String> productThumbnails,
             Map<Long, String> cropListingThumbnails
     ) {
+        return toOrderResponse(order, items, history, productThumbnails, cropListingThumbnails, null);
+    }
+
+    public OrderResponse toOrderResponse(
+            Order order,
+            List<OrderItem> items,
+            List<OrderStatusHistory> history,
+            Map<Long, String> productThumbnails,
+            Map<Long, String> cropListingThumbnails,
+            com.sgkrashi.dairy.dto.DairyDtos.OrderDeliveryResponse delivery
+    ) {
         List<OrderItemResponse> itemResponses = items.stream()
                 .map(item -> toItemResponse(item, productThumbnails, cropListingThumbnails))
                 .toList();
@@ -89,7 +100,8 @@ public class OrderMapper {
                 order.getShippingPincode(),
                 itemResponses,
                 historyResponses,
-                order.getCreatedAt()
+                order.getCreatedAt(),
+                delivery
         );
     }
 
