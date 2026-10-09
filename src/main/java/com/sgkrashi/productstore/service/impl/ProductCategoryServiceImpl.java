@@ -24,11 +24,16 @@ public class ProductCategoryServiceImpl implements ProductCategoryService {
 
     @Override
     public List<ProductCategoryResponse> getCategoryTree() {
+        return getCategoryTree(false);
+    }
+
+    @Override
+    public List<ProductCategoryResponse> getCategoryTree(boolean includeEmptyDairy) {
         List<ProductCategory> allCategories = productCategoryRepository.findByIsActiveTrue();
 
         // The Dairy category stays out of the public list until it has at least one active product, so a shop with no
         // dairy yet shows no empty "Dairy" filter (web or mobile).
-        if (!dairyCatalogService.hasActiveDairyProducts()) {
+        if (!includeEmptyDairy && !dairyCatalogService.hasActiveDairyProducts()) {
             java.util.Set<Long> dairyIds = dairyCatalogService.dairyCategoryIds();
             allCategories = allCategories.stream().filter(category -> !dairyIds.contains(category.getId())).toList();
         }

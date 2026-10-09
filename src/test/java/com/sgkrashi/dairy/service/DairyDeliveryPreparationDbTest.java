@@ -108,6 +108,29 @@ class DairyDeliveryPreparationDbTest {
     }
 
     @Test
+    void tenSimulatedDaysFollowWeekdaysPauseAndSkip() {
+        // Mon 6 Jan 2031 .. Wed 15 Jan 2031. Delivers Mondays and Wednesdays, paused on Wed 8th, skipping Mon 13th.
+        jdbc.update("INSERT INTO dairy_subscriptions (user_id, product_id, quantity, frequency, weekdays, start_date, status, pause_from, pause_to, "
+                + "address_line1, address_city, address_state, address_pincode, created_at, updated_at, is_active) VALUES "
+                + "(9101, ?, 1, 'DAYS', 'MON,WED', '2031-01-01', 'PAUSED', '2031-01-08', '2031-01-08', '1 Test Road', 'Town', 'State', '482001', NOW(6), NOW(6), 1)", productId);
+        long id = jdbc.queryForObject("SELECT MAX(id) FROM dairy_subscriptions WHERE user_id = 9101", Long.class);
+        jdbc.update("INSERT INTO dairy_subscription_skips (subscription_id, skip_date) VALUES (?, '2031-01-13')", id);
+        stock(10);
+
+        for (int day = 6; day <= 15; day++) {
+            preparation.prepareFor(LocalDate.of(2031, 1, day));
+        }
+        // And a second pass over every day changes nothing.
+        for (int day = 6; day <= 15; day++) {
+            preparation.prepareFor(LocalDate.of(2031, 1, day));
+        }
+
+        List<String> dates = jdbc.queryForList("SELECT CAST(delivery_date AS CHAR) FROM dairy_deliveries ORDER BY delivery_date", String.class);
+        assertEquals(List.of("2031-01-06", "2031-01-15"), dates);
+        assertEquals(8, stock());
+    }
+
+    @Test
     void preparesADeliveryAndTakesTheStock() {
         subscription(9101, 2);
         stock(10);

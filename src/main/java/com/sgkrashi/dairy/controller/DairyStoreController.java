@@ -36,6 +36,11 @@ public class DairyStoreController {
         return ResponseEntity.ok(ApiResponse.success(service.listProducts(page, size), "Dairy products retrieved"));
     }
 
+    @GetMapping("/product-ids")
+    public ResponseEntity<ApiResponse<java.util.List<Long>>> productIds() {
+        return ResponseEntity.ok(ApiResponse.success(service.dairyProductIds(), "Dairy product ids retrieved"));
+    }
+
     @GetMapping("/delivery-options")
     public ResponseEntity<ApiResponse<DeliveryOptionsResponse>> deliveryOptions(@RequestParam(required = false) String pincode) {
         return ResponseEntity.ok(ApiResponse.success(service.deliveryOptions(pincode), "Delivery options retrieved"));

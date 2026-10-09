@@ -80,6 +80,12 @@ public class DairyStoreService {
         return PaginatedResponse.of(items, result);
     }
 
+    /** Ids of every active dairy product; the checkout page uses it to know whether a cart contains dairy. */
+    public List<Long> dairyProductIds() {
+        Set<Long> dairyIds = catalogService.dairyCategoryIds();
+        return dairyIds.isEmpty() ? List.of() : productRepository.findActiveIdsByCategoryIds(dairyIds);
+    }
+
     public DeliveryOptionsResponse deliveryOptions(String pincode) {
         return rulesService.options(pincode);
     }
