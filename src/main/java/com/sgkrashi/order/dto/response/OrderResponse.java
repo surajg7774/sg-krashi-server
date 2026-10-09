@@ -1,5 +1,7 @@
 package com.sgkrashi.order.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.sgkrashi.dairy.dto.DairyDtos.OrderDeliveryResponse;
 import com.sgkrashi.order.entity.OrderStatus;
 
 import java.math.BigDecimal;
@@ -18,5 +20,7 @@ public record OrderResponse(
         String shippingPincode,
         List<OrderItemResponse> items,
         List<OrderStatusEventResponse> statusHistory,
-        Instant createdAt
+        Instant createdAt,
+        /** The slot and date chosen for dairy; left out of the JSON for orders without dairy. */
+        @JsonInclude(JsonInclude.Include.NON_NULL) OrderDeliveryResponse delivery
 ) {}

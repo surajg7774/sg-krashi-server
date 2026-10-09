@@ -45,10 +45,11 @@ public class AdminProductController {
     @GetMapping
     public ResponseEntity<ApiResponse<PaginatedResponse<ProductSummaryResponse>>> list(
             @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "false") boolean dairyOnly,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
-        return ResponseEntity.ok(ApiResponse.success(productService.listProductsForAdmin(search, page, size), "Products retrieved"));
+        return ResponseEntity.ok(ApiResponse.success(productService.listProductsForAdmin(search, dairyOnly, page, size), "Products retrieved"));
     }
 
     @GetMapping("/{id}")

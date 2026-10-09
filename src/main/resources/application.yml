@@ -107,6 +107,18 @@ app:
     # base-url (WeatherApiClient) already calls.
     base-url: ${GEOCODING_BASE_URL:https://geocoding-api.open-meteo.com}
 
+# Dairy. Every value has a safe default; nothing here is required. Both subscription switches are OFF by default:
+# with subscriptions.enabled=false customers cannot create subscriptions (the web hides the screens), and with
+# subscriptions.job-enabled=false the nightly job does nothing at all (no deliveries, no stock changes, no notifications).
+dairy:
+  subscriptions:
+    enabled: ${DAIRY_SUBSCRIPTIONS_ENABLED:false}
+    job-enabled: ${DAIRY_SUBSCRIPTIONS_JOB_ENABLED:false}
+    max-quantity: ${DAIRY_SUBSCRIPTIONS_MAX_QUANTITY:20}
+  delivery:
+    min-lead-days: ${DAIRY_DELIVERY_MIN_LEAD_DAYS:1}
+    window-days: ${DAIRY_DELIVERY_WINDOW_DAYS:7}
+
 crop-doctor:
   # gemini (default) or local — see CropAnalysisProvider implementations.
   provider: ${CROP_DOCTOR_PROVIDER:gemini}

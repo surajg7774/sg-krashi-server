@@ -21,6 +21,10 @@ UPDATE reviews SET comment = '[removed]', updated_at = NOW(6) WHERE user_id = @u
 UPDATE orders SET shipping_line1 = '[removed]', shipping_line2 = NULL, updated_at = NOW(6) WHERE user_id = @uid;
 UPDATE bookings SET cancellation_reason = NULL, updated_at = NOW(6) WHERE user_id = @uid;
 UPDATE crop_listings SET is_active = FALSE, updated_at = NOW(6) WHERE farmer_id = @uid;
+UPDATE dairy_deliveries d JOIN dairy_subscriptions s ON s.id = d.subscription_id
+  SET d.address_line1 = '[removed]', d.address_line2 = NULL, d.note = NULL, d.updated_at = NOW(6) WHERE s.user_id = @uid;
+UPDATE dairy_subscriptions SET status = 'CANCELLED', address_line1 = '[removed]', address_line2 = NULL,
+  cancelled_at = COALESCE(cancelled_at, NOW(6)), updated_at = NOW(6) WHERE user_id = @uid;
 
 UPDATE users SET name = 'Deleted user', email = CONCAT('deleted-', @uid, '@deleted.invalid'), phone = NULL,
   password_hash = NULL, google_id = NULL, is_active = FALSE, updated_at = NOW(6) WHERE id = @uid;

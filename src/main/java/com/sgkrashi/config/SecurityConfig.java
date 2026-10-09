@@ -98,7 +98,10 @@ public class SecurityConfig {
             "/api/v1/schemes/**",
             // Homepage weather widget and the /weather page — same "no
             // login required to view" reasoning as Mandi/Schemes above.
-            "/api/v1/weather/**"
+            "/api/v1/weather/**",
+            // Dairy page data (flags, dairy products, delivery options): read-only, no personal data. Subscriptions live
+            // under /api/v1/dairy/ and admin under /api/v1/admin/dairy/, both of which stay authenticated.
+            "/api/v1/dairy-store/**"
     };
 
     // POST-only, scoped by method for the same reason as PUBLIC_GET_ENDPOINTS —

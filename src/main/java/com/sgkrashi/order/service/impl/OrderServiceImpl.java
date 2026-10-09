@@ -17,6 +17,9 @@ import com.sgkrashi.cropmarketplace.entity.CropListing;
 import com.sgkrashi.cropmarketplace.repository.CropListingRepository;
 import com.sgkrashi.customer.entity.Address;
 import com.sgkrashi.customer.repository.AddressRepository;
+import com.sgkrashi.dairy.service.DairyCheckoutService;
+import com.sgkrashi.dairy.service.DeliveryRulesService.ChosenDelivery;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.sgkrashi.media.entity.MediaAsset;
 import com.sgkrashi.media.repository.MediaAssetRepository;
 import com.sgkrashi.notification.event.OrderConfirmedEvent;
@@ -90,6 +93,13 @@ public class OrderServiceImpl implements OrderService {
     private final OrderMapper orderMapper;
     private final ApplicationEventPublisher eventPublisher;
     private final AuditLogService auditLogService;
+
+    /**
+     * Dairy delivery rules. Set by Spring after construction (not a constructor argument) so the constructor, and every
+     * code path for a cart with no dairy, stays exactly as it was; null (as in unit tests) means no dairy handling.
+     */
+    @Autowired(required = false)
+    private DairyCheckoutService dairyCheckoutService;
 
     public OrderServiceImpl(
             OrderRepository orderRepository,
@@ -213,6 +223,10 @@ public class OrderServiceImpl implements OrderService {
             }
         }
 
+        ChosenDelivery chosenDelivery = dairyCheckoutService == null ? null : dairyCheckoutService.validate(
+                lockedLines.stream().map(LockedLine::product).filter(java.util.Objects::nonNull).toList(),
+                address.getPincode(), request.deliverySlotId(), request.deliveryDate());
+
         Order order = new Order();
         order.setUserId(userId);
         order.setOrderNumber(generateOrderNumber());
@@ -253,6 +267,9 @@ public class OrderServiceImpl implements OrderService {
         Order savedOrder = orderRepository.save(order);
         orderItems.forEach(item -> item.setOrder(savedOrder));
         orderItemRepository.saveAll(orderItems);
+        if (dairyCheckoutService != null) {
+            dairyCheckoutService.record(savedOrder.getId(), chosenDelivery);
+        }
 
         recordStatusHistory(savedOrder, OrderStatus.PENDING_PAYMENT, "Order placed", StatusChangeActor.customer(userId));
         cartItemRepository.deleteByCartId(cart.getId());
@@ -673,6 +690,9 @@ public class OrderServiceImpl implements OrderService {
                 .findByOwnerTypeAndOwnerIdInOrderBySortOrderAsc(CROP_LISTING_OWNER_TYPE, cropListingIds).stream()
                 .collect(Collectors.toMap(MediaAsset::getOwnerId, MediaAsset::getUrl, (first, second) -> first));
 
-        return orderMapper.toOrderResponse(order, items, history, productThumbnails, cropListingThumbnails);
+        com.sgkrashi.dairy.dto.DairyDtos.OrderDeliveryResponse delivery = dairyCheckoutService == null
+                ? null
+                : dairyCheckoutService.findForOrder(order.getId()).orElse(null);
+        return orderMapper.toOrderResponse(order, items, history, productThumbnails, cropListingThumbnails, delivery);
     }
 }

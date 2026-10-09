@@ -22,7 +22,9 @@ public class ProductCategoryController {
     }
 
     @GetMapping
-    public ResponseEntity<ApiResponse<List<ProductCategoryResponse>>> list() {
-        return ResponseEntity.ok(ApiResponse.success(productCategoryService.getCategoryTree(), "Categories retrieved"));
+    public ResponseEntity<ApiResponse<List<ProductCategoryResponse>>> list(
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "false") boolean includeEmptyDairy
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(productCategoryService.getCategoryTree(includeEmptyDairy), "Categories retrieved"));
     }
 }

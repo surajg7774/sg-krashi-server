@@ -46,4 +46,15 @@ public final class AuditActions {
     public static final String CONTENT_BLOCK_CREATED = "CONTENT_BLOCK_CREATED";
     public static final String CONTENT_BLOCK_UPDATED = "CONTENT_BLOCK_UPDATED";
     public static final String CONTENT_BLOCK_DEACTIVATED = "CONTENT_BLOCK_DEACTIVATED";
+
+    public static final String DELIVERY_AREA_CREATED = "DELIVERY_AREA_CREATED";
+    public static final String DELIVERY_AREA_UPDATED = "DELIVERY_AREA_UPDATED";
+    public static final String DELIVERY_AREA_DEACTIVATED = "DELIVERY_AREA_DEACTIVATED";
+
+    public static final String DELIVERY_SLOT_CREATED = "DELIVERY_SLOT_CREATED";
+    public static final String DELIVERY_SLOT_UPDATED = "DELIVERY_SLOT_UPDATED";
+    public static final String DELIVERY_SLOT_DEACTIVATED = "DELIVERY_SLOT_DEACTIVATED";
+
+    public static final String DAIRY_DELIVERY_DELIVERED = "DAIRY_DELIVERY_DELIVERED";
+    public static final String DAIRY_DELIVERY_FAILED = "DAIRY_DELIVERY_FAILED";
 }

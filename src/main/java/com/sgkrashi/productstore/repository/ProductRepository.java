@@ -53,6 +53,13 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     /** Admin dashboard KPI — simple threshold query against the existing table, no materialized view (Year 1 scale per the architecture doc). */
     long countByStockQtyLessThanAndIsActiveTrue(int threshold);
 
+    /** Dairy: ids of the active products in the given categories (lets the checkout page tell which cart lines are dairy). */
+    @Query("select p.id from Product p where p.isActive = true and p.category.id in :categoryIds")
+    List<Long> findActiveIdsByCategoryIds(@Param("categoryIds") java.util.Collection<Long> categoryIds);
+
+    /** Dairy: how many active products sit in the given categories (the dairy category and its children). */
+    long countByCategoryIdInAndIsActiveTrue(java.util.Collection<Long> categoryIds);
+
     /** Uniqueness check for Module 15's Admin slug generation — deliberately NOT scoped to isActive, so a new slug can't collide with a soft-deleted product's. */
     boolean existsBySlug(String slug);
 

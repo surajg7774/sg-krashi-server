@@ -5,6 +5,9 @@ import com.sgkrashi.audit.service.AuditLogService;
 import com.sgkrashi.common.dto.PaginatedResponse;
 import com.sgkrashi.common.exception.ResourceNotFoundException;
 import com.sgkrashi.common.util.SlugUtil;
+import com.sgkrashi.dairy.dto.DairyDtos.DairyDetailsResponse;
+import com.sgkrashi.dairy.service.DairyCatalogService;
+import com.sgkrashi.dairy.service.ProductDairyDetailsService;
 import com.sgkrashi.media.dto.response.MediaAssetResponse;
 import com.sgkrashi.media.entity.MediaAsset;
 import com.sgkrashi.media.mapper.MediaAssetMapper;
@@ -46,6 +49,8 @@ public class ProductServiceImpl implements ProductService {
     private final ProductMapper productMapper;
     private final MediaAssetMapper mediaAssetMapper;
     private final AuditLogService auditLogService;
+    private final ProductDairyDetailsService dairyDetailsService;
+    private final DairyCatalogService dairyCatalogService;
 
     public ProductServiceImpl(
             ProductRepository productRepository,
@@ -53,7 +58,9 @@ public class ProductServiceImpl implements ProductService {
             MediaAssetRepository mediaAssetRepository,
             ProductMapper productMapper,
             MediaAssetMapper mediaAssetMapper,
-            AuditLogService auditLogService
+            AuditLogService auditLogService,
+            ProductDairyDetailsService dairyDetailsService,
+            DairyCatalogService dairyCatalogService
     ) {
         this.productRepository = productRepository;
         this.productCategoryRepository = productCategoryRepository;
@@ -61,6 +68,8 @@ public class ProductServiceImpl implements ProductService {
         this.productMapper = productMapper;
         this.mediaAssetMapper = mediaAssetMapper;
         this.auditLogService = auditLogService;
+        this.dairyDetailsService = dairyDetailsService;
+        this.dairyCatalogService = dairyCatalogService;
     }
 
     /**
@@ -111,7 +120,8 @@ public class ProductServiceImpl implements ProductService {
 
         List<ProductSummaryResponse> relatedProducts = buildRelatedProducts(product);
 
-        return productMapper.toDetail(product, media, relatedProducts);
+        DairyDetailsResponse dairy = dairyDetailsService.find(product.getId()).orElse(null);
+        return productMapper.toDetail(product, media, relatedProducts, dairy);
     }
 
     private List<ProductSummaryResponse> buildRelatedProducts(Product product) {
@@ -163,6 +173,7 @@ public class ProductServiceImpl implements ProductService {
         // 15's own note: this really was a clean one-line addition, same
         // shape as Module 13's event-publish hooks.
         Product saved = productRepository.save(product);
+        dairyDetailsService.apply(saved, request.dairy());
         ProductDetailResponse after = buildDetailResponse(saved);
         auditLogService.record(AuditActions.PRODUCT_CREATED, ENTITY_TYPE_PRODUCT, saved.getId(), null, after);
         return after;
@@ -176,6 +187,7 @@ public class ProductServiceImpl implements ProductService {
         ProductDetailResponse before = buildDetailResponse(product);
         applyRequest(product, request);
         Product saved = productRepository.save(product);
+        dairyDetailsService.apply(saved, request.dairy());
         ProductDetailResponse after = buildDetailResponse(saved);
         auditLogService.record(AuditActions.PRODUCT_UPDATED, ENTITY_TYPE_PRODUCT, id, before, after);
         return after;
@@ -194,7 +206,15 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     public PaginatedResponse<ProductSummaryResponse> listProductsForAdmin(String search, int page, int size) {
-        Specification<Product> spec = Specification.allOf(ProductSpecifications.nameContains(search));
+        return listProductsForAdmin(search, false, page, size);
+    }
+
+    @Override
+    public PaginatedResponse<ProductSummaryResponse> listProductsForAdmin(String search, boolean dairyOnly, int page, int size) {
+        Specification<Product> spec = dairyOnly
+                ? Specification.allOf(ProductSpecifications.nameContains(search),
+                        ProductSpecifications.hasCategoryIn(dairyCatalogService.dairyCategoryIds()))
+                : Specification.allOf(ProductSpecifications.nameContains(search));
 
         Pageable pageable = PageRequest.of(Math.max(page, 0), size > 0 ? size : 20, Sort.by(Sort.Direction.ASC, "name"));
         Page<Product> productPage = productRepository.findAll(spec, pageable);

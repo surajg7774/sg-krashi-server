@@ -45,6 +45,10 @@ public class AccountErasureRepository {
         if (count("SELECT COUNT(*) FROM farmer_payouts WHERE farmer_id = ? AND status IN ('BATCHED', 'APPROVED')", userId) > 0) {
             reasons.add("a farmer payout that hasn't been paid out yet");
         }
+        if (count("SELECT COUNT(*) FROM dairy_deliveries d JOIN dairy_subscriptions s ON s.id = d.subscription_id "
+                + "WHERE s.user_id = ? AND d.status = 'SCHEDULED' AND d.delivery_date >= CURDATE()", userId) > 0) {
+            reasons.add("a dairy delivery that is scheduled");
+        }
         return reasons;
     }
 
@@ -86,6 +90,10 @@ public class AccountErasureRepository {
         jdbc.update("UPDATE orders SET shipping_line1 = '[removed]', shipping_line2 = NULL, updated_at = NOW(6) WHERE user_id = ?", userId);
         jdbc.update("UPDATE bookings SET cancellation_reason = NULL, updated_at = NOW(6) WHERE user_id = ?", userId);
         jdbc.update("UPDATE crop_listings SET is_active = FALSE, updated_at = NOW(6) WHERE farmer_id = ?", userId);
+        jdbc.update("UPDATE dairy_deliveries d JOIN dairy_subscriptions s ON s.id = d.subscription_id "
+                + "SET d.address_line1 = '[removed]', d.address_line2 = NULL, d.note = NULL, d.updated_at = NOW(6) WHERE s.user_id = ?", userId);
+        jdbc.update("UPDATE dairy_subscriptions SET status = 'CANCELLED', address_line1 = '[removed]', address_line2 = NULL, "
+                + "cancelled_at = COALESCE(cancelled_at, NOW(6)), updated_at = NOW(6) WHERE user_id = ?", userId);
 
         // ---- the account itself: anonymized in place, and deactivated so every
         // token and login attempt is refused immediately (the login check and
